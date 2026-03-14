@@ -47,8 +47,8 @@ export default function LoginPage() {
             <Image
               src="/logo.png"
               alt="mdavelCTF Logo"
-              width={160}
-              height={160}
+              width={220}
+              height={220}
               className="drop-shadow-[0_0_25px_rgba(6,182,212,0.5)]"
               priority
             />
