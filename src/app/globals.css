@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #0a0e1a;
+    color: #f1f5f9;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #111827;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+
+  ::selection {
+    background: rgba(6, 182, 212, 0.3);
+    color: #f1f5f9;
+  }
+}
+
+@layer components {
+  .cyber-card {
+    @apply bg-cyber-card border border-cyber-border rounded-xl p-6
+      backdrop-blur-sm transition-all duration-300 hover:border-cyber-cyan/30;
+  }
+
+  .cyber-card-glow {
+    @apply cyber-card hover:shadow-neon-cyan;
+  }
+
+  .cyber-btn {
+    @apply px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200
+      focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-cyber-bg
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .cyber-btn-primary {
+    @apply cyber-btn bg-gradient-to-r from-cyber-cyan to-cyan-500 text-cyber-bg
+      hover:from-cyber-cyan-light hover:to-cyan-400 focus:ring-cyber-cyan
+      shadow-neon-cyan hover:shadow-lg;
+  }
+
+  .cyber-btn-secondary {
+    @apply cyber-btn bg-cyber-card border border-cyber-border text-gray-300
+      hover:border-cyber-purple hover:text-cyber-purple-light focus:ring-cyber-purple;
+  }
+
+  .cyber-btn-danger {
+    @apply cyber-btn bg-red-500/10 border border-red-500/30 text-red-400
+      hover:bg-red-500/20 hover:border-red-500/50 focus:ring-red-500;
+  }
+
+  .cyber-btn-success {
+    @apply cyber-btn bg-emerald-500/10 border border-emerald-500/30 text-emerald-400
+      hover:bg-emerald-500/20 hover:border-emerald-500/50 focus:ring-emerald-500;
+  }
+
+  .cyber-input {
+    @apply w-full px-4 py-3 bg-cyber-darker border border-cyber-border rounded-lg
+      text-gray-200 placeholder-gray-500 transition-all duration-200
+      focus:outline-none focus:border-cyber-cyan focus:ring-1 focus:ring-cyber-cyan/50;
+  }
+
+  .cyber-select {
+    @apply cyber-input appearance-none cursor-pointer;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+  }
+
+  .cyber-textarea {
+    @apply cyber-input resize-y min-h-[100px];
+  }
+
+  .cyber-label {
+    @apply block text-sm font-medium text-gray-400 mb-1.5;
+  }
+
+  .cyber-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .neon-text-cyan {
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.5), 0 0 20px rgba(6, 182, 212, 0.3);
+  }
+
+  .neon-text-purple {
+    text-shadow: 0 0 10px rgba(139, 92, 246, 0.5), 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+
+  .neon-text-green {
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5), 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient 8s ease infinite;
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+}
+
+@layer utilities {
+  .text-glow-cyan {
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
+  }
+
+  .text-glow-purple {
+    text-shadow: 0 0 10px rgba(139, 92, 246, 0.8);
+  }
+}
