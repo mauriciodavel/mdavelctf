@@ -5,12 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
-import { DIFFICULTIES, DIFFICULTY_COLORS, toDirectImageUrl } from '@/lib/utils';
+import { DIFFICULTIES, DIFFICULTY_COLORS, CHALLENGE_DIFFICULTIES, CHALLENGE_DIFFICULTY_LABELS, CHALLENGE_DIFFICULTY_COLORS, toDirectImageUrl } from '@/lib/utils';
 import Modal from '@/components/Modal';
 import confetti from 'canvas-confetti';
 import {
   ArrowLeft, Flag, Plus, Edit, Trash2, Target, Clock, Download,
-  ChevronRight, Shield, Zap, Star, ThumbsUp, ThumbsDown, Lightbulb, Lock, Unlock, Send, AlertTriangle
+  ChevronRight, Shield, Zap, Star, ThumbsUp, ThumbsDown, Lightbulb, Lock, Unlock, Send, AlertTriangle,
+  BookOpen, GraduationCap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -38,6 +39,7 @@ export default function EventDetailPage() {
   const [hintModalOpen, setHintModalOpen] = useState(false);
   const [editingMission, setEditingMission] = useState<any>(null);
   const [editingChallenge, setEditingChallenge] = useState<any>(null);
+  const [editingHint, setEditingHint] = useState<any>(null);
 
   // Forms
   const [missionForm, setMissionForm] = useState({
@@ -46,7 +48,8 @@ export default function EventDetailPage() {
   });
   const [challengeForm, setChallengeForm] = useState({
     sequence_number: 1, title: '', description: '', max_attempts: '',
-    points: 10, flag: '',
+    points: 10, flag: '', difficulty: 'medio',
+    what_i_learned: '', learn_more_url: '',
   });
   const [hintForm, setHintForm] = useState({ content: '', shell_cost: 10, challenge_id: '' });
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -65,6 +68,10 @@ export default function EventDetailPage() {
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const canManage = ['super_admin', 'admin', 'instructor'].includes(profile?.role || '');
+
+  // Privileged viewer: super_admin, admin, or the instructor who created the event
+  const isPrivilegedViewer = profile?.role === 'super_admin' || profile?.role === 'admin'
+    || (profile?.role === 'instructor' && event?.created_by === profile?.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,6 +224,9 @@ export default function EventDetailPage() {
       max_attempts: challengeForm.max_attempts ? parseInt(challengeForm.max_attempts) : null,
       points: challengeForm.points,
       flag: challengeForm.flag,
+      difficulty: challengeForm.difficulty,
+      what_i_learned: challengeForm.what_i_learned || null,
+      learn_more_url: challengeForm.learn_more_url || null,
     };
 
     if (editingChallenge) {
@@ -234,20 +244,57 @@ export default function EventDetailPage() {
     loadMissionDetails(selectedMission);
   };
 
-  const handleAddHint = async () => {
+  const handleDeleteMission = async (missionId: string) => {
+    if (!confirm(t('common.confirm_delete'))) return;
+    const { error } = await supabase.from('missions').delete().eq('id', missionId);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Missão excluída!');
+    setSelectedMission(null);
+    loadEvent();
+  };
+
+  const handleDeleteChallenge = async (challengeId: string) => {
+    if (!confirm(t('common.confirm_delete'))) return;
+    const { error } = await supabase.from('challenges').delete().eq('id', challengeId);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Desafio excluído!');
+    loadMissionDetails(selectedMission);
+  };
+
+  const handleSaveHint = async () => {
     if (!hintForm.content.trim() || !hintForm.challenge_id) {
       toast.error('Conteúdo e desafio são obrigatórios'); return;
     }
-    const { error } = await supabase.from('hints').insert({
-      challenge_id: hintForm.challenge_id,
-      content: hintForm.content,
-      shell_cost: hintForm.shell_cost,
-      order_index: hints.filter(h => h.challenge_id === hintForm.challenge_id).length,
-    });
-    if (error) { toast.error(error.message); return; }
-    toast.success('Dica adicionada!');
+
+    if (editingHint) {
+      const { error } = await supabase.from('hints').update({
+        challenge_id: hintForm.challenge_id,
+        content: hintForm.content,
+        shell_cost: hintForm.shell_cost,
+      }).eq('id', editingHint.id);
+      if (error) { toast.error(error.message); return; }
+      toast.success('Dica atualizada!');
+    } else {
+      const { error } = await supabase.from('hints').insert({
+        challenge_id: hintForm.challenge_id,
+        content: hintForm.content,
+        shell_cost: hintForm.shell_cost,
+        order_index: hints.filter(h => h.challenge_id === hintForm.challenge_id).length,
+      });
+      if (error) { toast.error(error.message); return; }
+      toast.success('Dica adicionada!');
+    }
     setHintModalOpen(false);
+    setEditingHint(null);
     setHintForm({ content: '', shell_cost: 10, challenge_id: '' });
+    loadMissionDetails(selectedMission);
+  };
+
+  const handleDeleteHint = async (hintId: string) => {
+    if (!confirm(t('common.confirm_delete'))) return;
+    const { error } = await supabase.from('hints').delete().eq('id', hintId);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Dica excluída!');
     loadMissionDetails(selectedMission);
   };
 
@@ -498,7 +545,36 @@ export default function EventDetailPage() {
                       <p className="text-sm text-gray-400 line-clamp-2 mt-1">{mission.description}</p>
                       {mission.author && <p className="text-xs text-gray-500 mt-2">Autor: {mission.author}</p>}
                     </div>
-                    <ChevronRight size={20} className="text-gray-600 group-hover:text-cyber-cyan transition-colors" />
+                    <div className="flex items-center gap-1">
+                      {canManage && (
+                        <>
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMission(mission);
+                            setMissionForm({
+                              name: mission.name,
+                              description: mission.description || '',
+                              image_url: mission.image_url || '',
+                              download_links: (mission.download_links || []).join('\n'),
+                              difficulty: mission.difficulty,
+                              time_limit: mission.time_limit?.toString() || '',
+                              author: mission.author || '',
+                              conclusions: mission.conclusions || '',
+                            });
+                            setMissionModalOpen(true);
+                          }} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-500 hover:text-cyber-cyan transition-colors">
+                            <Edit size={16} />
+                          </button>
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteMission(mission.id);
+                          }} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-500 hover:text-red-400 transition-colors">
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                      <ChevronRight size={20} className="text-gray-600 group-hover:text-cyber-cyan transition-colors" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -553,6 +629,7 @@ export default function EventDetailPage() {
             {canManage && (
               <div className="flex gap-2">
                 <button onClick={() => {
+                  setEditingHint(null);
                   setHintForm({ content: '', shell_cost: 10, challenge_id: '' });
                   setHintModalOpen(true);
                 }} className="cyber-btn-secondary flex items-center gap-1 text-sm">
@@ -560,7 +637,7 @@ export default function EventDetailPage() {
                 </button>
                 <button onClick={() => {
                   setEditingChallenge(null);
-                  setChallengeForm({ sequence_number: challenges.length + 1, title: '', description: '', max_attempts: '', points: 10, flag: '' });
+                  setChallengeForm({ sequence_number: challenges.length + 1, title: '', description: '', max_attempts: '', points: 10, flag: '', difficulty: 'medio', what_i_learned: '', learn_more_url: '' });
                   setChallengeModalOpen(true);
                 }} className="cyber-btn-primary flex items-center gap-1 text-sm">
                   <Plus size={14} /> {t('challenge.create')}
@@ -595,25 +672,46 @@ export default function EventDetailPage() {
                             ? (teamSolved && !solved ? 'Resolvido (Equipe)' : t('challenge.solved'))
                             : isLocked ? 'Bloqueado' : t('challenge.not_solved')}
                         </span>
+                        {challenge.difficulty && (
+                          <span className={`cyber-badge ${CHALLENGE_DIFFICULTY_COLORS[challenge.difficulty] || 'bg-gray-500/20 text-gray-400'}`}>
+                            {CHALLENGE_DIFFICULTY_LABELS[challenge.difficulty] || challenge.difficulty}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-cyber-cyan">{challenge.points} pts</span>
                       {canManage && (
-                        <button onClick={() => {
-                          setEditingChallenge(challenge);
-                          setChallengeForm({
-                            sequence_number: challenge.sequence_number,
-                            title: challenge.title,
-                            description: challenge.description,
-                            max_attempts: challenge.max_attempts?.toString() || '',
-                            points: challenge.points,
-                            flag: challenge.flag,
-                          });
-                          setChallengeModalOpen(true);
-                        }} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-cyber-cyan">
-                          <Edit size={14} />
-                        </button>
+                        <div className="flex items-center gap-0.5">
+                          <button onClick={() => {
+                            setEditingHint(null);
+                            setHintForm({ content: '', shell_cost: 10, challenge_id: challenge.id });
+                            setHintModalOpen(true);
+                          }} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-amber-400" title="Adicionar dica">
+                            <Lightbulb size={14} />
+                          </button>
+                          <button onClick={() => {
+                            setEditingChallenge(challenge);
+                            setChallengeForm({
+                              sequence_number: challenge.sequence_number,
+                              title: challenge.title,
+                              description: challenge.description,
+                              max_attempts: challenge.max_attempts?.toString() || '',
+                              points: challenge.points,
+                              flag: challenge.flag,
+                              difficulty: challenge.difficulty || 'medio',
+                              what_i_learned: challenge.what_i_learned || '',
+                              learn_more_url: challenge.learn_more_url || '',
+                            });
+                            setChallengeModalOpen(true);
+                          }} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-cyber-cyan">
+                            <Edit size={14} />
+                          </button>
+                          <button onClick={() => handleDeleteChallenge(challenge.id)}
+                            className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-red-400">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -652,13 +750,19 @@ export default function EventDetailPage() {
                           </h5>
                           {challengeHints.map((hint) => {
                             const isUsed = hintUsage.has(hint.id);
+                            const canSeeContent = isPrivilegedViewer || isUsed;
                             return (
                               <div key={hint.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-cyber-border text-sm">
-                                {isUsed ? (
+                                {canSeeContent ? (
                                   <>
                                     <Unlock size={14} className="text-amber-400" />
                                     <span className="text-gray-300 flex-1">{hint.content}</span>
-                                    <span className="cyber-badge bg-green-500/20 text-green-400">{t('challenge.hint_used')}</span>
+                                    {isUsed && (
+                                      <span className="cyber-badge bg-green-500/20 text-green-400">{t('challenge.hint_used')}</span>
+                                    )}
+                                    {isPrivilegedViewer && !isUsed && (
+                                      <span className="cyber-badge bg-cyan-500/20 text-cyan-400 text-[10px]">🐚 {hint.shell_cost}</span>
+                                    )}
                                   </>
                                 ) : (
                                   <>
@@ -669,6 +773,21 @@ export default function EventDetailPage() {
                                       🐚 {hint.shell_cost} - {t('challenge.unlock_hint')}
                                     </button>
                                   </>
+                                )}
+                                {canManage && (
+                                  <div className="flex gap-1 ml-2">
+                                    <button onClick={() => {
+                                      setEditingHint(hint);
+                                      setHintForm({ content: hint.content, shell_cost: hint.shell_cost, challenge_id: hint.challenge_id });
+                                      setHintModalOpen(true);
+                                    }} className="p-1 text-cyber-cyan hover:text-white transition-colors" title="Editar dica">
+                                      <Edit size={14} />
+                                    </button>
+                                    <button onClick={() => handleDeleteHint(hint.id)}
+                                      className="p-1 text-red-400 hover:text-red-300 transition-colors" title="Excluir dica">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             );
@@ -703,6 +822,31 @@ export default function EventDetailPage() {
                           {getEventStatusLabel() === 'agendado'
                             ? 'Este evento ainda não começou. Aguarde a data de início para submeter bandeiras.'
                             : 'Este evento já foi encerrado. Não é possível submeter bandeiras.'}
+                        </div>
+                      )}
+
+                      {/* What I Learned & Learn More — visible after solved or for privileged viewers */}
+                      {(effectivelySolved || isPrivilegedViewer) && (challenge.what_i_learned || challenge.learn_more_url) && (
+                        <div className="mt-3 space-y-2 p-3 rounded-lg bg-cyber-purple/5 border border-cyber-purple/20">
+                          {challenge.what_i_learned && (
+                            <div className="flex items-start gap-2 text-sm">
+                              <GraduationCap size={16} className="text-cyber-purple mt-0.5 shrink-0" />
+                              <div>
+                                <span className="font-semibold text-cyber-purple">O que aprendi:</span>
+                                <p className="text-gray-300 mt-1 whitespace-pre-wrap">{challenge.what_i_learned}</p>
+                              </div>
+                            </div>
+                          )}
+                          {challenge.learn_more_url && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <BookOpen size={16} className="text-cyber-cyan shrink-0" />
+                              <span className="font-semibold text-cyber-cyan">Saiba mais:</span>
+                              <a href={challenge.learn_more_url} target="_blank" rel="noopener noreferrer"
+                                className="text-cyber-cyan hover:text-cyber-cyan-light underline truncate">
+                                {challenge.learn_more_url}
+                              </a>
+                            </div>
+                          )}
                         </div>
                       )}
                     </>
@@ -798,10 +942,21 @@ export default function EventDetailPage() {
                 onChange={(e) => setChallengeForm({ ...challengeForm, points: parseInt(e.target.value) || 10 })} className="cyber-input" />
             </div>
           </div>
-          <div>
-            <label className="cyber-label">{t('challenge.title')} *</label>
-            <input type="text" value={challengeForm.title}
-              onChange={(e) => setChallengeForm({ ...challengeForm, title: e.target.value })} className="cyber-input" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="cyber-label">{t('challenge.title')} *</label>
+              <input type="text" value={challengeForm.title}
+                onChange={(e) => setChallengeForm({ ...challengeForm, title: e.target.value })} className="cyber-input" />
+            </div>
+            <div>
+              <label className="cyber-label">Nível de Dificuldade</label>
+              <select value={challengeForm.difficulty}
+                onChange={(e) => setChallengeForm({ ...challengeForm, difficulty: e.target.value })} className="cyber-select">
+                {CHALLENGE_DIFFICULTIES.map((d) => (
+                  <option key={d} value={d}>{CHALLENGE_DIFFICULTY_LABELS[d]}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label className="cyber-label">{t('challenge.description')}</label>
@@ -819,6 +974,18 @@ export default function EventDetailPage() {
               onChange={(e) => setChallengeForm({ ...challengeForm, flag: e.target.value })}
               className="cyber-input font-mono" placeholder="flag{...}" />
           </div>
+          <div>
+            <label className="cyber-label">O que aprendi neste desafio?</label>
+            <textarea value={challengeForm.what_i_learned}
+              onChange={(e) => setChallengeForm({ ...challengeForm, what_i_learned: e.target.value })}
+              className="cyber-textarea" rows={3} placeholder="Ex: Aprendi sobre injeção SQL, como funciona e como prevenir..." />
+          </div>
+          <div>
+            <label className="cyber-label">Onde aprender mais sobre isso?</label>
+            <input type="url" value={challengeForm.learn_more_url}
+              onChange={(e) => setChallengeForm({ ...challengeForm, learn_more_url: e.target.value })}
+              className="cyber-input" placeholder="https://exemplo.com/artigo" />
+          </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setChallengeModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
             <button onClick={handleSaveChallenge} className="cyber-btn-primary">{t('common.save')}</button>
@@ -827,7 +994,7 @@ export default function EventDetailPage() {
       </Modal>
 
       {/* Hint Modal */}
-      <Modal isOpen={hintModalOpen} onClose={() => setHintModalOpen(false)} title="Adicionar Dica">
+      <Modal isOpen={hintModalOpen} onClose={() => { setHintModalOpen(false); setEditingHint(null); }} title={editingHint ? 'Editar Dica' : 'Adicionar Dica'}>
         <div className="space-y-4">
           <div>
             <label className="cyber-label">Desafio *</label>
@@ -850,8 +1017,8 @@ export default function EventDetailPage() {
               onChange={(e) => setHintForm({ ...hintForm, shell_cost: parseInt(e.target.value) || 0 })} className="cyber-input" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setHintModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
-            <button onClick={handleAddHint} className="cyber-btn-primary">{t('common.save')}</button>
+            <button onClick={() => { setHintModalOpen(false); setEditingHint(null); }} className="cyber-btn-secondary">{t('common.cancel')}</button>
+            <button onClick={handleSaveHint} className="cyber-btn-primary">{t('common.save')}</button>
           </div>
         </div>
       </Modal>

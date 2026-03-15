@@ -25,6 +25,8 @@ export default function DashboardPage() {
     myClasses: 0,
     myStudents: 0,
     myEvents: 0,
+    totalLeagues: 0,
+    leagueEventsCount: 0,
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,8 @@ export default function DashboardPage() {
       supabase.from('submissions').select('*', { count: 'exact', head: true }),
       supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('is_correct', true),
       supabase.from('hint_usage').select('*', { count: 'exact', head: true }),
+      supabase.from('leagues').select('*', { count: 'exact', head: true }),
+      supabase.from('league_events').select('*', { count: 'exact', head: true }),
     ]);
     if (cancelled) return;
 
@@ -71,6 +75,8 @@ export default function DashboardPage() {
     const totalSubmissions = val(3);
     const totalResolutions = val(4);
     const hintsUnlocked = val(5);
+    const totalLeagues = val(6);
+    const leagueEventsCount = val(7);
 
     // Instructor-specific stats
     let myClasses = 0, myStudents = 0, myEvents = 0;
@@ -106,6 +112,7 @@ export default function DashboardPage() {
       resolutionRate: rate,
       hintsUnlocked,
       myClasses, myStudents, myEvents,
+      totalLeagues, leagueEventsCount,
     });
 
     // Recent submissions
@@ -204,8 +211,16 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="p-4 rounded-lg bg-gradient-to-r from-amber-500/10 to-amber-600/5 border border-amber-500/20">
+                  <h4 className="text-sm font-medium text-gray-400 mb-3">{t('dash.season_analysis')}</h4>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-400">{t('dash.season_analysis')}</span>
+                    <div>
+                      <p className="text-2xl font-bold text-amber-400">{stats.totalLeagues}</p>
+                      <p className="text-xs text-gray-500">{t('dash.total_leagues')}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-amber-300">{stats.leagueEventsCount}</p>
+                      <p className="text-xs text-gray-500">{t('dash.league_events')}</p>
+                    </div>
                     <TrendingUp size={24} className="text-amber-400" />
                   </div>
                 </div>

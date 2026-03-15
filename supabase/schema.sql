@@ -293,6 +293,9 @@ CREATE TABLE IF NOT EXISTS public.challenges (
   max_attempts INTEGER,
   points INTEGER NOT NULL DEFAULT 10,
   flag TEXT NOT NULL,
+  difficulty TEXT DEFAULT 'medio',
+  what_i_learned TEXT,
+  learn_more_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

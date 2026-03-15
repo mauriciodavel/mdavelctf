@@ -99,6 +99,23 @@ export const DIFFICULTY_COLORS: Record<string, string> = {
   insane: 'bg-purple-500/20 text-purple-400',
 };
 
+// Challenge-specific difficulty levels
+export const CHALLENGE_DIFFICULTIES = ['facil', 'medio', 'dificil', 'fritar_cerebro'] as const;
+
+export const CHALLENGE_DIFFICULTY_LABELS: Record<string, string> = {
+  facil: 'Fácil',
+  medio: 'Médio',
+  dificil: 'Difícil',
+  fritar_cerebro: 'De fritar o cérebro',
+};
+
+export const CHALLENGE_DIFFICULTY_COLORS: Record<string, string> = {
+  facil: 'bg-green-500/20 text-green-400',
+  medio: 'bg-yellow-500/20 text-yellow-400',
+  dificil: 'bg-orange-500/20 text-orange-400',
+  fritar_cerebro: 'bg-red-500/20 text-red-400',
+};
+
 // Convert Google Drive sharing URLs to direct image URLs
 export function toDirectImageUrl(url: string | null | undefined): string {
   if (!url) return '';
