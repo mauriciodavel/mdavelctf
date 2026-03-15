@@ -638,7 +638,7 @@ export default function LeaguesPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <span className={`cyber-badge text-[10px] ${status.color}`}>{status.label}</span>
-                    {canManage && (
+                    {canManage && (league.created_by === profile?.id || profile?.role === 'super_admin' || profile?.role === 'admin') && (
                       <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
                         <button onClick={(e) => handleEdit(league, e)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-cyber-cyan">
                           <Edit size={14} />

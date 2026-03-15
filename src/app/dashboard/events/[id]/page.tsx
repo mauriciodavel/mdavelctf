@@ -67,11 +67,11 @@ export default function EventDetailPage() {
   // Confetti canvas ref
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const canManage = ['super_admin', 'admin', 'instructor'].includes(profile?.role || '');
+  const canManage = profile?.role === 'super_admin' || profile?.role === 'admin'
+    || (profile?.role === 'instructor' && event?.created_by === profile?.id);
 
   // Privileged viewer: super_admin, admin, or the instructor who created the event
-  const isPrivilegedViewer = profile?.role === 'super_admin' || profile?.role === 'admin'
-    || (profile?.role === 'instructor' && event?.created_by === profile?.id);
+  const isPrivilegedViewer = canManage;
 
   useEffect(() => {
     let cancelled = false;
