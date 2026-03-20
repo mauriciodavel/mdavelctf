@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import Modal from '@/components/Modal';
-import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, Mail, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function TeamsPage() {
@@ -33,6 +33,7 @@ export default function TeamsPage() {
 
   // Mini-chat state
   const [miniChatEnabled, setMiniChatEnabled] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
 
   // Load mini-chat state from localStorage on mount
   useEffect(() => {
@@ -182,8 +183,9 @@ export default function TeamsPage() {
     }
 
     setChatTeam(team);
+    setShowMembers(false);
     const { data: members } = await supabase.from('team_members')
-      .select('*, profiles(display_name)').eq('team_id', team.id);
+      .select('*, profiles(display_name, email)').eq('team_id', team.id);
     setTeamMembers(members || []);
 
     // Build profile name cache
@@ -298,7 +300,13 @@ export default function TeamsPage() {
             </button>
             <div>
               <h2 className="font-bold text-white">{chatTeam.name}</h2>
-              <p className="text-xs text-gray-500">{teamMembers.length} membros</p>
+              <button
+                onClick={() => setShowMembers(!showMembers)}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-cyber-cyan transition-colors"
+              >
+                <Users size={12} /> {teamMembers.length} {t('team.members')}
+                {showMembers ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -333,6 +341,36 @@ export default function TeamsPage() {
             </button>
           </div>
         </div>
+
+        {/* Members Panel */}
+        {showMembers && (
+          <div className="border-b border-cyber-border bg-cyber-card/80 px-4 py-3 space-y-2 max-h-52 overflow-y-auto animate-slide-in">
+            {teamMembers.map((m: any) => (
+              <div key={m.id} className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-white/5 border border-cyber-border/50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyber-cyan to-cyber-purple flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                    {(m.profiles?.display_name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-white truncate">{m.profiles?.display_name || '?'}</span>
+                      {m.role === 'leader' && <Crown size={12} className="text-amber-400 flex-shrink-0" />}
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                      <Mail size={10} className="flex-shrink-0" />
+                      <span className="truncate">{m.profiles?.email || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] text-gray-500 whitespace-nowrap flex-shrink-0">
+                  <Calendar size={10} />
+                  <span>{new Date(m.joined_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                  <span className="text-gray-600">{new Date(m.joined_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-cyber-darker/50">
