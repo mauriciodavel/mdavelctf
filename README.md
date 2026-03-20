@@ -251,15 +251,24 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 - Criar equipes públicas ou privadas
 - Ingressar via código de 6 caracteres
 - Hierarquia líder/membro
+- **Contagem de membros** exibida nos cards de equipes (minhas e públicas)
 - **Chat em tempo real** (Supabase Realtime + polling fallback)
+- **Painel de membros** expansível no chat: nome de exibição, e-mail e data/hora de ingresso
+- **Sistema de @menção**: autocomplete ao digitar `@`, sugestões por teclado (↑↓/Tab/Enter/Esc)
+  - Menções destacadas em ciano nas mensagens; menções a você em dourado
+  - Notificação diferenciada para @menções: som de 3 notas (acorde C6→E6→G6), 3.5x mais alto que o normal
+  - Toast com borda dourada, ícone âmbar, texto "mencionou você" e duração estendida (8s)
 - Notificações toast + som (880Hz) para novas mensagens
 - Contador de mensagens não lidas na sidebar
-- **MiniChat** flutuante fixável em qualquer página
+- **MiniChat** flutuante fixável em qualquer página (com suporte a @menção)
 
 ### 🏅 Scoreboard (`/dashboard/scoreboard`)
 - Modo individual e por equipes
 - Filtro por evento ou liga
-- Ranking por pontos
+- **Filtro de liga corrigido**: usa `event_codes` e `league_code` (mesmo mecanismo da página de ligas)
+- Ranking por pontos → dicas usadas → hora da última flag (mais cedo = melhor)
+- **Coluna "Última Flag"**: exibe data e hora da captura da última bandeira
+- **Banner de critérios de ranking**: explicação dos critérios visível ao usuário
 - Progresso (desafios resolvidos / total)
 - Porcentagem de acerto
 - Posição do usuário destacada
@@ -437,6 +446,11 @@ npm start
 - [x] Chat em tempo real por equipe (Realtime + polling)
 - [x] MiniChat flutuante fixável
 - [x] Notificações de chat (toast + som + contador)
+- [x] Sistema de @menção no chat com autocomplete, destaque e som diferenciado
+- [x] Painel de membros expansível no chat (nome, e-mail, data de ingresso)
+- [x] Contagem de participantes exibida nos cards de equipes
+- [x] Scoreboard com coluna "Última Flag" (data/hora da captura) e critérios de ranking visíveis
+- [x] Filtro de liga no scoreboard corrigido (event_codes + league_code)
 - [x] Scoreboard individual e por equipes
 - [x] Sistema de badges com 4 raridades
 - [x] Perfil do usuário com XP, nível, Shells, stats

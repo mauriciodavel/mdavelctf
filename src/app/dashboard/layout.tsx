@@ -40,12 +40,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const teamName = teamNamesRef.current[msg.team_id] || 'Equipe';
     const senderName = msg.profiles?.display_name || msg._senderName || 'Alguém';
 
+    // Detect if current user is @mentioned
+    const isMentioned = profile.display_name &&
+      msg.message?.includes(`@${profile.display_name}`);
+
     // Increment unread counter
     if (!pathname.includes('/dashboard/teams')) {
       setUnreadChat(prev => prev + 1);
     }
 
-    // Show toast notification
+    // Show toast notification (highlighted if mentioned)
     toast(
       (tt) => (
         <div
@@ -55,39 +59,71 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             router.push('/dashboard/teams');
           }}
         >
-          <MessageCircle size={20} className="text-cyber-cyan mt-0.5 shrink-0" />
+          <MessageCircle size={20} className={`mt-0.5 shrink-0 ${isMentioned ? 'text-amber-400' : 'text-cyber-cyan'}`} />
           <div className="min-w-0">
             <p className="text-sm font-bold text-white truncate">{teamName}</p>
-            <p className="text-xs text-cyber-cyan">{senderName}</p>
+            <p className={`text-xs ${isMentioned ? 'text-amber-400' : 'text-cyber-cyan'}`}>
+              {senderName} {isMentioned ? 'mencionou você' : ''}
+            </p>
             <p className="text-xs text-gray-400 truncate">{msg.message}</p>
           </div>
         </div>
       ),
       {
-        duration: 5000,
+        duration: isMentioned ? 8000 : 5000,
         position: 'top-right',
         style: {
           background: '#1a1a2e',
-          border: '1px solid rgba(0, 255, 255, 0.3)',
+          border: isMentioned ? '1px solid rgba(251, 191, 36, 0.5)' : '1px solid rgba(0, 255, 255, 0.3)',
           borderRadius: '12px',
           padding: '12px 16px',
         },
       }
     );
 
-    // Play notification sound
+    // Play notification sound — louder & distinct for @mentions
     try {
       const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = 'sine';
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      if (isMentioned) {
+        // @mention sound: two-tone alert, louder
+        const gain = ctx.createGain();
+        gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+
+        const osc1 = ctx.createOscillator();
+        osc1.connect(gain);
+        osc1.frequency.value = 1047; // C6
+        osc1.type = 'triangle';
+        osc1.start(ctx.currentTime);
+        osc1.stop(ctx.currentTime + 0.15);
+
+        const osc2 = ctx.createOscillator();
+        osc2.connect(gain);
+        osc2.frequency.value = 1319; // E6
+        osc2.type = 'triangle';
+        osc2.start(ctx.currentTime + 0.18);
+        osc2.stop(ctx.currentTime + 0.35);
+
+        const osc3 = ctx.createOscillator();
+        osc3.connect(gain);
+        osc3.frequency.value = 1568; // G6
+        osc3.type = 'triangle';
+        osc3.start(ctx.currentTime + 0.38);
+        osc3.stop(ctx.currentTime + 0.6);
+      } else {
+        // Normal notification: single soft tone
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+      }
     } catch { /* audio not available */ }
   }, [profile, pathname, router]);
 

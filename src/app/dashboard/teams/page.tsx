@@ -5,8 +5,25 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import Modal from '@/components/Modal';
-import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, Mail, Calendar } from 'lucide-react';
+import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, Mail, Calendar, AtSign } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// Render message text with @mention highlights
+function renderMessageWithMentions(text: string, currentProfile: any) {
+  const parts = text.split(/(@\w[\w\s]*?\b)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('@')) {
+      const mentionName = part.slice(1).trim();
+      const isMe = currentProfile?.display_name?.toLowerCase() === mentionName.toLowerCase();
+      return (
+        <span key={i} className={`font-semibold ${isMe ? 'text-amber-400 bg-amber-400/10 px-0.5 rounded' : 'text-cyber-cyan'}`}>
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
 
 export default function TeamsPage() {
   const { profile } = useAuth();
@@ -34,6 +51,70 @@ export default function TeamsPage() {
   // Mini-chat state
   const [miniChatEnabled, setMiniChatEnabled] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
+
+  // @mention state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const mentionSuggestions = mentionQuery !== null
+    ? teamMembers.filter(m =>
+        m.user_id !== profile?.id &&
+        (m.profiles?.display_name || '').toLowerCase().includes(mentionQuery.toLowerCase())
+      ).slice(0, 5)
+    : [];
+
+  const handleInputChange = (value: string) => {
+    setNewMessage(value);
+    const cursorPos = inputRef.current?.selectionStart || value.length;
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const mentionMatch = textBeforeCursor.match(/@([\w\s]*)$/);
+    if (mentionMatch) {
+      setMentionQuery(mentionMatch[1]);
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
+  };
+
+  const insertMention = (member: any) => {
+    const cursorPos = inputRef.current?.selectionStart || newMessage.length;
+    const textBeforeCursor = newMessage.slice(0, cursorPos);
+    const textAfterCursor = newMessage.slice(cursorPos);
+    const beforeMention = textBeforeCursor.replace(/@[\w\s]*$/, '');
+    const displayName = member.profiles?.display_name || '?';
+    const updated = `${beforeMention}@${displayName} ${textAfterCursor}`;
+    setNewMessage(updated);
+    setMentionQuery(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleMentionKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionQuery !== null && mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(prev => (prev + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(prev => (prev - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        insertMention(mentionSuggestions[mentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setMentionQuery(null);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && mentionQuery === null) {
+      sendMessage();
+    }
+  };
 
   // Load mini-chat state from localStorage on mount
   useEffect(() => {
@@ -386,7 +467,7 @@ export default function TeamsPage() {
                   {!isMe && (
                     <p className="text-xs text-cyber-purple font-semibold mb-1">{msg.profiles?.display_name}</p>
                   )}
-                  <p className="text-sm break-words">{msg.message}</p>
+                  <p className="text-sm break-words">{renderMessageWithMentions(msg.message, profile)}</p>
                   <p className="text-[10px] text-gray-500 mt-1 text-right">
                     {new Date(msg.sent_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -399,15 +480,38 @@ export default function TeamsPage() {
 
         {/* Chat Input */}
         <div className="p-4 border-t border-cyber-border bg-cyber-card rounded-b-xl">
-          <div className="flex gap-2">
-            <input
-              type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder={t('team.send_message')} className="cyber-input flex-1 py-2"
-            />
-            <button onClick={sendMessage} className="cyber-btn-primary">
-              <Send size={18} />
-            </button>
+          <div className="relative">
+            {/* @mention suggestions dropdown */}
+            {mentionQuery !== null && mentionSuggestions.length > 0 && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-cyber-darker border border-cyber-border rounded-lg shadow-xl overflow-hidden z-10">
+                {mentionSuggestions.map((m: any, idx: number) => (
+                  <button key={m.id}
+                    onClick={() => insertMention(m)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                      idx === mentionIndex ? 'bg-cyber-cyan/20 text-cyber-cyan' : 'text-gray-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyber-cyan to-cyber-purple flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+                      {(m.profiles?.display_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <span className="truncate">{m.profiles?.display_name}</span>
+                    {m.role === 'leader' && <Crown size={10} className="text-amber-400 flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={inputRef}
+                type="text" value={newMessage}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleMentionKeyDown}
+                placeholder={t('team.send_message')} className="cyber-input flex-1 py-2"
+              />
+              <button onClick={sendMessage} className="cyber-btn-primary">
+                <Send size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
