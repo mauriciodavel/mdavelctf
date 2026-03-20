@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
-import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb } from 'lucide-react';
+import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb, Clock } from 'lucide-react';
 
 interface ScoreEntry {
   position: number;
@@ -405,6 +405,13 @@ export default function ScoreboardPage() {
         </div>
       )}
 
+      {/* Ranking Criteria Info */}
+      <div className="cyber-card bg-cyber-darker/50 border-cyber-border/50 py-3 px-4">
+        <p className="text-xs text-gray-400 text-center">
+          {t('score.ranking_criteria')}
+        </p>
+      </div>
+
       {/* Scoreboard Table */}
       <div className="cyber-card overflow-hidden p-0">
         <div className="overflow-x-auto">
@@ -420,13 +427,16 @@ export default function ScoreboardPage() {
                   <Lightbulb size={14} className="inline mr-1 text-yellow-400" />Dicas
                 </th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('scoreboard.accuracy')}</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">
+                  <Clock size={14} className="inline mr-1 text-cyber-cyan" />{t('score.last_flag')}
+                </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={filterMode === 'individual' ? 7 : 6} className="text-center py-8 text-gray-500">{t('common.loading')}</td></tr>
+                <tr><td colSpan={filterMode === 'individual' ? 8 : 7} className="text-center py-8 text-gray-500">{t('common.loading')}</td></tr>
               ) : entries.length === 0 ? (
-                <tr><td colSpan={filterMode === 'individual' ? 7 : 6} className="text-center py-8 text-gray-500">{t('scoreboard.no_data')}</td></tr>
+                <tr><td colSpan={filterMode === 'individual' ? 8 : 7} className="text-center py-8 text-gray-500">{t('scoreboard.no_data')}</td></tr>
               ) : entries.map((entry) => {
                 const isMe = entry.id === profile?.id;
                 return (
@@ -481,6 +491,20 @@ export default function ScoreboardPage() {
                           }`} style={{ width: `${entry.accuracy}%` }} />
                         </div>
                       </div>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      {entry.lastSolveTime ? (
+                        <div className="flex flex-col items-center">
+                          <span className="text-xs text-gray-300">
+                            {new Date(entry.lastSolveTime).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            {new Date(entry.lastSolveTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-600">—</span>
+                      )}
                     </td>
                   </tr>
                 );

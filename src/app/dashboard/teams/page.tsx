@@ -29,6 +29,7 @@ export default function TeamsPage() {
 
   const [form, setForm] = useState({ name: '', is_public: false, image_url: '' });
   const channelRef = useRef<any>(null);
+  const [teamMemberCounts, setTeamMemberCounts] = useState<Record<string, number>>({});
 
   // Mini-chat state
   const [miniChatEnabled, setMiniChatEnabled] = useState(false);
@@ -102,6 +103,22 @@ export default function TeamsPage() {
         .eq('is_public', true).order('created_at', { ascending: false });
       if (teamsErr) console.error('Public teams query error:', teamsErr.message);
       if (!cancelled) setTeams(allTeams || []);
+
+      // Fetch member counts for all relevant teams
+      const allTeamIds = [
+        ...(memberData || []).map((m: any) => m.team_id),
+        ...(allTeams || []).map((t: any) => t.id)
+      ];
+      const uniqueTeamIds = [...new Set(allTeamIds)];
+      if (uniqueTeamIds.length > 0) {
+        const { data: memberCountData } = await supabase.from('team_members')
+          .select('team_id').in('team_id', uniqueTeamIds);
+        const counts: Record<string, number> = {};
+        (memberCountData || []).forEach((m: any) => {
+          counts[m.team_id] = (counts[m.team_id] || 0) + 1;
+        });
+        if (!cancelled) setTeamMemberCounts(counts);
+      }
     } catch (err) {
       console.error('loadTeams exception:', err);
     } finally {
@@ -400,6 +417,10 @@ export default function TeamsPage() {
                     </span>
                   </div>
                 </div>
+                <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
+                  <Users size={14} className="text-cyber-cyan" />
+                  <span>{teamMemberCounts[team.id] || 0} {t('team.members')}</span>
+                </div>
                 <div className="flex items-center gap-2 mt-3">
                   <button onClick={() => { navigator.clipboard.writeText(team.code); toast.success(t('common.copied')); }}
                     className="flex items-center gap-1 text-xs font-mono text-cyber-cyan">
@@ -437,6 +458,10 @@ export default function TeamsPage() {
             {filtered.map((team: any) => (
               <div key={team.id} className="cyber-card">
                 <h3 className="font-bold text-white">{team.name}</h3>
+                <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
+                  <Users size={14} className="text-cyber-cyan" />
+                  <span>{teamMemberCounts[team.id] || 0} {t('team.members')}</span>
+                </div>
                 <button onClick={() => { navigator.clipboard.writeText(team.code); toast.success(t('common.copied')); }}
                   className="flex items-center gap-1 text-xs font-mono text-cyber-cyan mt-2">
                   <Copy size={12} /> {team.code}
