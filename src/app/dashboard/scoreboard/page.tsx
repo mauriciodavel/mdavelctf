@@ -92,9 +92,29 @@ export default function ScoreboardPage() {
       let relevantEventIds: Set<string> | null = null;
 
       if (filterLeague !== 'all') {
-        const { data: leData } = await supabase.from('league_events')
-          .select('event_id').eq('league_id', filterLeague);
-        relevantEventIds = new Set((leData || []).map((le: any) => le.event_id));
+        // Get the league's event_codes and code
+        const { data: leagueData } = await supabase.from('leagues')
+          .select('code, event_codes').eq('id', filterLeague).single();
+
+        const eventIds = new Set<string>();
+
+        if (leagueData) {
+          // Mechanism 1: events linked via league.event_codes (comma-separated)
+          const codes = (leagueData.event_codes || '')
+            .split(',').map((c: string) => c.trim()).filter(Boolean);
+          if (codes.length > 0) {
+            const { data: evByCode } = await supabase.from('events')
+              .select('id').in('code', codes);
+            (evByCode || []).forEach((e: any) => eventIds.add(e.id));
+          }
+
+          // Mechanism 2: events with league_code referencing this league
+          const { data: evByLeagueCode } = await supabase.from('events')
+            .select('id').eq('league_code', leagueData.code);
+          (evByLeagueCode || []).forEach((e: any) => eventIds.add(e.id));
+        }
+
+        relevantEventIds = eventIds;
       }
 
       let challengeQuery;
