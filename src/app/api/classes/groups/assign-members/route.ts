@@ -101,8 +101,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Falha ao carregar membros atuais: ${existingError.message}` }, { status: 400 });
     }
 
-    const existingIds = new Set((existingRows || []).map((m: any) => m.user_id));
-    const targetIds = new Set(normalizedUserIds);
+    const existingIds = new Set<string>((existingRows || []).map((m: any) => m.user_id));
+    const targetIds = new Set<string>(normalizedUserIds);
 
     const toAdd = normalizedUserIds.filter((id) => !existingIds.has(id));
     const toRemove = Array.from(existingIds).filter((id) => !targetIds.has(id));
