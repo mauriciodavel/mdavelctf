@@ -35,6 +35,38 @@ Plataforma web gamificada estilo **Capture the Flag (CTF)** voltada para ambient
 - **Scoreboard** individual e por equipes
 - **Bilíngue**: Português (BR) e Inglês
 
+### Alterações Recentes Implementadas
+
+1. Acesso ao grupo da turma com foco visual e navegação automática.
+Resumo: ao clicar em acessar grupo, a tela rola até o painel de membros, mostra feedback visual e evita a sensação de que o botão não funcionou.
+
+2. Correção de duplicidade de equipes ligadas a grupos.
+Resumo: o sincronismo entre `class_groups` e `teams` foi ajustado para evitar criação duplicada em cenários de concorrência e garantir reaproveitamento da equipe já existente.
+
+3. Autoinscrição de alunos em grupos via endpoint server-side.
+Resumo: a ação de entrar/sair de grupo passou para API dedicada, com validação de capacidade e regras de autoinscrição, reduzindo erros de RLS no cliente.
+
+4. Gestão de membros de grupo por instrutor com robustez.
+Resumo: o fluxo de atribuição/remoção de membros foi corrigido para evitar falhas 500 e manter consistência entre grupo e equipe associada.
+
+5. Exclusão e arquivamento de equipes com regras de segurança.
+Resumo: admins podem excluir equipes quando permitido e arquivar equipes com histórico (ex.: submissões), preservando rastreabilidade.
+
+6. Exclusão persistente de usuários no painel admin.
+Resumo: a remoção passou a ser feita em `auth.users` por endpoint server-side com validações de permissão, garantindo persistência após recarregar a página.
+
+7. Modal de confirmação para exclusão de usuário.
+Resumo: substituição do `confirm` nativo por modal com dados do usuário e confirmação explícita para reduzir risco operacional.
+
+8. Importação CSV no admin com anexo e download de modelo.
+Resumo: o modal administrativo passou a ter botão de anexar arquivo `.csv` e botão para baixar template, alinhando com o fluxo de turmas.
+
+9. Reingresso de aluno removido na turma sem erro de RLS.
+Resumo: o sistema agora reativa vínculo existente (`status = active`) em vez de tentar inserir linha duplicada, eliminando erro de política e de chave única.
+
+10. Separação de listagens em Equipes Públicas e Equipes Privadas.
+Resumo: a página de equipes agora distingue seções por visibilidade; admin visualiza ambas, e não-admin só vê privadas quando é criador ou membro.
+
 ---
 
 ## Tech Stack
@@ -244,13 +276,18 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 - Instrutor cria turmas com código de acesso
 - Alunos ingressam via código
 - Gerenciamento de membros (ativar/inativar/remover)
+- Reingresso de alunos removidos com reativação de vínculo (sem erro de RLS)
 - Regenerar código de acesso
 - Vincular eventos à turma (visibilidade privada)
+- Grupos com acesso visual destacado e rolagem automática para painel de membros
+- Autoinscrição em grupos com validações server-side
 
 ### 👥 Equipes (`/dashboard/teams`)
 - Criar equipes públicas ou privadas
 - Ingressar via código de 6 caracteres
 - Hierarquia líder/membro
+- Listagem separada por seção: **Minhas Equipes**, **Equipes Públicas** e **Equipes Privadas** (admin)
+- Equipes privadas não aparecem na seção pública
 - **Contagem de membros** exibida nos cards de equipes (minhas e públicas)
 - **Chat em tempo real** (Supabase Realtime + polling fallback)
 - **Painel de membros** expansível no chat: nome de exibição, e-mail e data/hora de ingresso
@@ -261,6 +298,7 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 - Notificações toast + som (880Hz) para novas mensagens
 - Contador de mensagens não lidas na sidebar
 - **MiniChat** flutuante fixável em qualquer página (com suporte a @menção)
+- Ações administrativas de equipe: exclusão controlada e arquivamento quando necessário
 
 ### 🏅 Scoreboard (`/dashboard/scoreboard`)
 - Modo individual e por equipes
@@ -287,6 +325,9 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 
 ### ⚙️ Admin (`/dashboard/admin`)
 - Painel administrativo (visível apenas para super_admin/admin)
+- Exclusão de usuários com persistência (remoção em `auth.users` via API)
+- Modal de confirmação para exclusão de usuário
+- Importação CSV com anexar arquivo e download de modelo
 
 ### ❓ Ajuda (`/dashboard/help`)
 - FAQ completo em PT-BR e inglês
@@ -442,7 +483,14 @@ npm start
 - [x] Ligas com tempo restante em dias:horas:minutos e botão "Acessar Evento"
 - [x] CRUD completo de Turmas com código de acesso
 - [x] Gerenciamento de membros de turma
+- [x] Reingresso de aluno removido com reativação de vínculo (sem erro de RLS)
+- [x] Acesso ao grupo com rolagem automática e destaque visual
+- [x] Autoinscrição de alunos em grupos via endpoint server-side
+- [x] Gestão de membros de grupo com sincronismo estável com equipes
 - [x] Equipes com código de acesso e hierarquia líder/membro
+- [x] Separação de listagem em Equipes Públicas e Equipes Privadas
+- [x] Visibilidade de equipes privadas por perfil (admin total; não-admin restrito)
+- [x] Exclusão/arquivamento administrativo de equipes com validações de integridade
 - [x] Chat em tempo real por equipe (Realtime + polling)
 - [x] MiniChat flutuante fixável
 - [x] Notificações de chat (toast + som + contador)
@@ -456,6 +504,9 @@ npm start
 - [x] Perfil do usuário com XP, nível, Shells, stats
 - [x] Página de ajuda/FAQ completa
 - [x] Painel administrativo
+- [x] Exclusão persistente de usuários via endpoint server-side
+- [x] Modal de confirmação para exclusão de usuário no admin
+- [x] Importação CSV no admin com anexo de arquivo e download de modelo
 - [x] Internacionalização PT-BR / EN
 - [x] Tema cyber dark completo
 - [x] Schema SQL com 17 tabelas, RLS, triggers e indexes

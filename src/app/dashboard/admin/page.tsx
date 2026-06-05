@@ -1,15 +1,39 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import Modal from '@/components/Modal';
 import {
   Shield, Users, Search, Edit2, Trash2, Database, Trash, AlertTriangle,
-  ChevronDown, ChevronUp, Rocket, Info, CheckCircle, Loader2
+  ChevronDown, ChevronUp, Rocket, Info, CheckCircle, Loader2,
+  Upload, Key, Clock, Activity, UserPlus, X, Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// ============================================================
+// CSV HELPERS
+// ============================================================
+function parseCSV(text: string): { email: string; display_name: string; password: string; class_id?: string; group_id?: string }[] {
+  const lines = text.trim().split('\n').filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.trim());
+    const obj: any = {};
+    headers.forEach((h, i) => { obj[h] = cols[i] || ''; });
+    return obj;
+  }).filter(r => r.email && r.display_name && r.password);
+}
+
+function formatActiveTime(seconds: number): string {
+  if (!seconds || seconds < 60) return `${seconds || 0}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
 
 // ============================================================
 // SEED DATA — Dados de demonstração
@@ -409,6 +433,30 @@ export default function AdminPage() {
   const [seedRunning, setSeedRunning] = useState(false);
   const [seedLog, setSeedLog] = useState<string[]>([]);
 
+  // Reset password state
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetUser, setResetUser] = useState<any>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
+  // CSV Bulk import state
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [csvClasses, setCsvClasses] = useState<any[]>([]);
+  const [csvGroups, setCsvGroups] = useState<any[]>([]);
+  const [csvClassId, setCsvClassId] = useState('');
+  const [csvGroupId, setCsvGroupId] = useState('');
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [csvLog, setCsvLog] = useState<string[]>([]);
+
+  // Delete confirmation state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // CSV file input ref
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+
   const isSuperAdmin = profile?.role === 'super_admin';
   const isAdmin = profile?.role === 'admin' || isSuperAdmin;
 
@@ -454,6 +502,133 @@ export default function AdminPage() {
     setEditModalOpen(true);
   };
 
+  const openResetPassword = (user: any) => {
+    setResetUser(user);
+    setResetPassword('');
+    setResetModalOpen(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetUser || !resetPassword) return;
+    if (resetPassword.length < 8) { toast.error('Senha mínima: 8 caracteres'); return; }
+    setResetLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: resetUser.id, newPassword: resetPassword }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || 'Erro ao redefinir senha'); return; }
+      toast.success(`Senha de ${resetUser.display_name} redefinida!`);
+      setResetModalOpen(false);
+    } catch (err) {
+      toast.error('Erro de conexão');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const openCsvImport = async () => {
+    const { data: cls } = await supabase.from('classes').select('id, name');
+    setCsvClasses(cls || []);
+    setCsvText('');
+    setCsvClassId('');
+    setCsvGroupId('');
+    setCsvLog([]);
+    setCsvModalOpen(true);
+  };
+
+  const handleCsvClassChange = async (classId: string) => {
+    setCsvClassId(classId);
+    setCsvGroupId('');
+    if (classId) {
+      const { data } = await supabase.from('class_groups').select('id, name').eq('class_id', classId);
+      setCsvGroups(data || []);
+    } else {
+      setCsvGroups([]);
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvText.trim()) { toast.error('Cole o conteúdo CSV'); return; }
+    const rows = parseCSV(csvText);
+    if (rows.length === 0) { toast.error('Nenhuma linha válida encontrada. Formato: email,display_name,password'); return; }
+    setCsvLoading(true);
+    setCsvLog([`⏳ Importando ${rows.length} usuário(s)...`]);
+    try {
+      const payload = rows.map(r => ({
+        ...r,
+        class_id: csvClassId || r.class_id || undefined,
+        group_id: csvGroupId || r.group_id || undefined,
+      }));
+      const res = await fetch('/api/auth/bulk-register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: payload }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error); setCsvLoading(false); return; }
+      const log: string[] = [];
+      (json.results || []).forEach((r: any) => {
+        if (r.success) log.push(`✅ ${r.email}`);
+        else log.push(`❌ ${r.email} — ${r.error}`);
+      });
+      log.push(`\n📊 ${json.succeeded} criados, ${json.failed} erros`);
+      setCsvLog(log);
+      toast.success(`Importação: ${json.succeeded} criados, ${json.failed} erros`);
+      loadUsers();
+    } catch (err) {
+      toast.error('Erro de conexão');
+    } finally {
+      setCsvLoading(false);
+    }
+  };
+
+  const handleDownloadCsvTemplate = () => {
+    const csvTemplate = [
+      'email,display_name,password',
+      'aluno1@escola.com,Aluno Um,Senha@123',
+      'aluno2@escola.com,Aluno Dois,Senha@123',
+    ].join('\n');
+
+    const blob = new Blob([csvTemplate], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'modelo_usuarios.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCsvFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setCsvLoading(true);
+      const content = await file.text();
+      const rows = parseCSV(content);
+
+      if (rows.length === 0) {
+        toast.error('CSV inválido. Use os cabeçalhos: email,display_name,password');
+        return;
+      }
+
+      setCsvText(content);
+      setCsvLog([]);
+      toast.success(`${rows.length} linhas carregadas. Clique em "Importar" para continuar.`);
+    } catch (err) {
+      console.error('CSV file error:', err);
+      toast.error('Falha ao processar arquivo CSV');
+    } finally {
+      setCsvLoading(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
+
   const handleSave = async () => {
     if (!selectedUser) return;
     // Only super_admin can change to super_admin or admin roles
@@ -486,11 +661,32 @@ export default function AdminPage() {
 
   const handleDelete = async (userId: string) => {
     if (userId === profile?.id) { toast.error('Não é possível excluir a si mesmo'); return; }
-    if (!confirm('Excluir este usuário permanentemente?')) return;
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    if (error) { toast.error(error.message); return; }
-    toast.success('Usuário excluído');
-    loadUsers();
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    setUserToDelete(user);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: userToDelete.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || 'Falha ao excluir usuário'); return; }
+      toast.success('Usuário excluído permanentemente');
+      setDeleteModalOpen(false);
+      setUserToDelete(null);
+      await loadUsers();
+    } catch (err) {
+      toast.error('Erro de conexão');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const filtered = users.filter(u => {
@@ -529,7 +725,7 @@ export default function AdminPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Shield className="text-red-400" size={28} /> {t('nav.admin')}
         </h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
@@ -542,6 +738,10 @@ export default function AdminPage() {
             <option value="instructor">Instrutor</option>
             <option value="competitor">Competidor</option>
           </select>
+          <button onClick={openCsvImport}
+            className="cyber-btn-secondary flex items-center gap-2 text-sm whitespace-nowrap">
+            <Upload size={15} /> Importar CSV
+          </button>
         </div>
       </div>
 
@@ -704,7 +904,12 @@ export default function AdminPage() {
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">Nível</th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">XP</th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">Shells</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">Cadastro</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">
+                  <Clock size={12} className="inline mr-1 text-cyber-cyan" />Último Login
+                </th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">
+                  <Activity size={12} className="inline mr-1 text-cyber-green" />Tempo Ativo
+                </th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">Ações</th>
               </tr>
             </thead>
@@ -739,13 +944,22 @@ export default function AdminPage() {
                     <td className="py-3 px-4 text-center text-sm text-cyber-cyan">{user.xp_points}</td>
                     <td className="py-3 px-4 text-center text-sm text-gray-300">🐚 {user.shells}</td>
                     <td className="py-3 px-4 text-center text-xs text-gray-500">
-                      {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                      {user.last_login_at
+                        ? new Date(user.last_login_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+                        : <span className="text-gray-700">—</span>}
+                    </td>
+                    <td className="py-3 px-4 text-center text-xs text-cyber-green font-mono">
+                      {formatActiveTime(user.total_active_seconds)}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => openEdit(user)}
                           className="p-1.5 text-gray-500 hover:text-cyber-cyan transition-colors" title="Editar">
                           <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => openResetPassword(user)}
+                          className="p-1.5 text-gray-500 hover:text-amber-400 transition-colors" title="Redefinir Senha">
+                          <Key size={14} />
                         </button>
                         {user.id !== profile?.id && (
                           <button onClick={() => handleDelete(user.id)}
@@ -795,6 +1009,175 @@ export default function AdminPage() {
           <div className="flex justify-end gap-3 pt-4">
             <button onClick={() => setEditModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
             <button onClick={handleSave} className="cyber-btn-primary">{t('common.save')}</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal isOpen={resetModalOpen} onClose={() => setResetModalOpen(false)} title="Redefinir Senha">
+        <div className="space-y-4">
+          {resetUser && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-cyber-border">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyber-cyan to-cyber-purple flex items-center justify-center text-xs font-bold">
+                {resetUser.display_name?.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">{resetUser.display_name}</p>
+                <p className="text-xs text-gray-500">{resetUser.email}</p>
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="cyber-label">Nova Senha</label>
+            <input
+              type="password"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              className="cyber-input"
+              placeholder="Mínimo 8 caracteres"
+            />
+          </div>
+          <p className="text-xs text-amber-400 flex items-center gap-1">
+            <AlertTriangle size={12} /> O usuário deverá usar esta senha no próximo login.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setResetModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
+            <button onClick={handleResetPassword} disabled={resetLoading}
+              className="cyber-btn-primary flex items-center gap-2">
+              {resetLoading ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+              Redefinir Senha
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* CSV Import Modal */}
+      <Modal isOpen={csvModalOpen} onClose={() => setCsvModalOpen(false)} title="Importar Usuários via CSV" size="lg">
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-cyber-cyan/5 border border-cyber-cyan/20 text-xs text-gray-400">
+            <p className="font-semibold text-cyber-cyan mb-1">Formato do CSV:</p>
+            <code className="text-gray-300">email,display_name,password</code>
+            <br />
+            <code className="text-gray-500">joao@email.com,João Silva,Senha@123</code>
+            <p className="mt-2 text-gray-500">Colunas <strong>class_id</strong> e <strong>group_id</strong> são opcionais (use os seletores abaixo para vincular a todos).</p>
+          </div>
+          <textarea
+            className="cyber-textarea font-mono text-sm"
+            rows={6}
+            placeholder="email,display_name,password&#10;aluno1@escola.com,Aluno Um,Senha@123&#10;aluno2@escola.com,Aluno Dois,Senha@456"
+            value={csvText}
+            onChange={e => setCsvText(e.target.value)}
+          />
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleDownloadCsvTemplate}
+              className="cyber-btn-secondary flex items-center gap-2 text-sm"
+            >
+              <Download size={14} /> Baixar Modelo
+            </button>
+            <button
+              onClick={() => csvInputRef.current?.click()}
+              disabled={csvLoading}
+              className="cyber-btn-secondary flex items-center gap-2 text-sm"
+            >
+              <Upload size={14} /> {csvLoading ? 'Carregando...' : 'Anexar Arquivo'}
+            </button>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleCsvFileSelected}
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="cyber-label">Vincular à Turma (opcional)</label>
+              <select value={csvClassId} onChange={e => handleCsvClassChange(e.target.value)} className="cyber-select">
+                <option value="">Nenhuma</option>
+                {csvClasses.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="cyber-label">Vincular ao Grupo (opcional)</label>
+              <select value={csvGroupId} onChange={e => setCsvGroupId(e.target.value)} className="cyber-select" disabled={!csvClassId}>
+                <option value="">Nenhum</option>
+                {csvGroups.map((g: any) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {csvLog.length > 0 && (
+            <div className="bg-cyber-darker border border-cyber-border rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs">
+              {csvLog.map((line, i) => (
+                <p key={i} className={line.startsWith('✅') ? 'text-cyber-green' : line.startsWith('❌') ? 'text-red-400' : 'text-amber-400'}>{line}</p>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setCsvModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
+            <button onClick={handleCsvImport} disabled={csvLoading}
+              className="cyber-btn-primary flex items-center gap-2">
+              {csvLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {csvLoading ? 'Importando...' : 'Importar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmar Exclusão">
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 flex gap-3">
+            <AlertTriangle size={24} className="text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-red-400 mb-1">Exclusão Permanente</p>
+              <p className="text-sm text-gray-400">Esta ação não pode ser desfeita. O usuário será removido do sistema permanentemente.</p>
+            </div>
+          </div>
+
+          {userToDelete && (
+            <div className="p-4 rounded-lg bg-cyber-darker border border-cyber-border space-y-2">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Usuário</div>
+                <div className="text-white font-semibold">{userToDelete.display_name}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Email</div>
+                <div className="text-cyber-cyan font-mono text-sm">{userToDelete.email}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Função</div>
+                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                  userToDelete.role === 'super_admin' ? 'bg-red-500/20 text-red-400' :
+                  userToDelete.role === 'admin' ? 'bg-orange-500/20 text-orange-400' :
+                  userToDelete.role === 'instructor' ? 'bg-green-500/20 text-green-400' :
+                  'bg-blue-500/20 text-blue-400'
+                }`}>
+                  {userToDelete.role === 'super_admin' ? 'Super Admin' :
+                   userToDelete.role === 'admin' ? 'Admin' :
+                   userToDelete.role === 'instructor' ? 'Instrutor' :
+                   'Competidor'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => {
+              setDeleteModalOpen(false);
+              setUserToDelete(null);
+            }} disabled={deleteLoading} className="cyber-btn-secondary">
+              Cancelar
+            </button>
+            <button onClick={confirmDelete} disabled={deleteLoading}
+              className="cyber-btn-danger flex items-center gap-2">
+              {deleteLoading ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {deleteLoading ? 'Excluindo...' : 'Excluir Permanentemente'}
+            </button>
           </div>
         </div>
       </Modal>

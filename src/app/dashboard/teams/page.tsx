@@ -5,7 +5,8 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import Modal from '@/components/Modal';
-import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, Mail, Calendar, AtSign } from 'lucide-react';
+import { isClassGroupTeam } from '@/lib/group-team-sync';
+import { Users, Plus, Copy, Search, Send, MessageCircle, UserPlus, LogOut, Crown, Globe, Lock, PanelRightClose, PanelRightOpen, ChevronDown, ChevronUp, Mail, Calendar, AtSign, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Render message text with @mention highlights
@@ -29,6 +30,7 @@ export default function TeamsPage() {
   const { profile } = useAuth();
   const { t } = useI18n();
   const supabase = createClient();
+  const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
   const [teams, setTeams] = useState<any[]>([]);
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +58,8 @@ export default function TeamsPage() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const isArchivedTeam = (team: any) => typeof team?.name === 'string' && team.name.startsWith('[ARQUIVADA] ');
 
   const mentionSuggestions = mentionQuery !== null
     ? teamMembers.filter(m =>
@@ -174,22 +178,65 @@ export default function TeamsPage() {
     if (!profile) return;
     setLoading(true);
     try {
+      // Ensure every class group the user belongs to has a linked team synced.
+      const { data: myGroupRows } = await supabase
+        .from('class_group_members')
+        .select('group_id')
+        .eq('user_id', profile.id);
+
+      const myGroupIds = Array.from(new Set((myGroupRows || []).map((r: any) => r.group_id).filter(Boolean)));
+      if (myGroupIds.length > 0) {
+        await Promise.all(
+          myGroupIds.map(async (groupId) => {
+            const res = await fetch('/api/classes/groups/sync-team', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groupId }),
+            });
+            if (!res.ok) {
+              const json = await res.json();
+              console.warn('Group-team sync warning:', json.error || 'erro desconhecido');
+            }
+          })
+        );
+      }
+
       // My teams
       const { data: memberData, error: memberErr } = await supabase.from('team_members')
         .select('team_id, role, teams(*)').eq('user_id', profile.id);
       if (memberErr) console.error('Team members query error:', memberErr.message);
-      if (!cancelled) setMyTeams((memberData || []).map((m: any) => ({ ...m.teams, memberRole: m.role })));
+      const myTeamsData = (memberData || []).map((m: any) => ({ ...m.teams, memberRole: m.role }));
+      
+      // Deduplicate: if a team is in myTeams, don't show it in public teams
+      const myTeamIds = new Set(myTeamsData.map((t: any) => t.id));
+      
+      if (!cancelled) setMyTeams(myTeamsData);
 
-      // All public teams
-      const { data: allTeams, error: teamsErr } = await supabase.from('teams').select('*')
-        .eq('is_public', true).order('created_at', { ascending: false });
-      if (teamsErr) console.error('Public teams query error:', teamsErr.message);
-      if (!cancelled) setTeams(allTeams || []);
+      // All other teams (non-member), filtered by visibility rules
+      let teamsQuery = supabase.from('teams').select('*');
+      
+      if (isAdmin) {
+        // Admin sees ALL teams (public and private)
+        teamsQuery = teamsQuery.order('created_at', { ascending: false });
+      } else {
+        // Non-admin sees only public teams OR private teams they created
+        teamsQuery = teamsQuery
+          .or(`is_public.eq.true,created_by.eq.${profile.id}`)
+          .order('created_at', { ascending: false });
+      }
+      
+      const { data: allTeams, error: teamsErr } = await teamsQuery;
+      if (teamsErr) console.error('Teams query error:', teamsErr.message);
+      
+      // Filter out teams user is already member of, store all in one state
+      const otherTeams = (allTeams || []).filter((t: any) => !myTeamIds.has(t.id));
+      
+      if (!cancelled) setTeams(otherTeams);
 
       // Fetch member counts for all relevant teams
       const allTeamIds = [
-        ...(memberData || []).map((m: any) => m.team_id),
-        ...(allTeams || []).map((t: any) => t.id)
+        ...myTeamsData.map((t: any) => t.id),
+        ...otherTeams.map((t: any) => t.id)
       ];
       const uniqueTeamIds = [...new Set(allTeamIds)];
       if (uniqueTeamIds.length > 0) {
@@ -244,11 +291,98 @@ export default function TeamsPage() {
     await loadTeams();
   };
 
-  const handleLeave = async (teamId: string) => {
+  const handleLeave = async (team: any) => {
+    if (isClassGroupTeam(team)) {
+      toast.error('Esta equipe está vinculada a um grupo da turma. Saia pelo grupo na página de Turmas.');
+      return;
+    }
+
     if (!confirm('Sair da equipe?')) return;
-    await supabase.from('team_members').delete().eq('team_id', teamId).eq('user_id', profile?.id);
+    await supabase.from('team_members').delete().eq('team_id', team.id).eq('user_id', profile?.id);
     toast.success('Saiu da equipe');
     setChatTeam(null);
+    await loadTeams();
+  };
+
+  const handleDeleteTeam = async (team: any) => {
+    if (!isAdmin) {
+      toast.error('Somente administradores podem excluir equipes');
+      return;
+    }
+
+    if (isClassGroupTeam(team)) {
+      toast.error('Esta equipe está vinculada a um grupo da turma e não pode ser excluída por aqui. Gerencie pelo módulo Turmas.');
+      return;
+    }
+
+    if (!confirm(`Excluir a equipe "${team.name}"?`)) return;
+
+    // Prevent FK violation when historical submissions reference this team.
+    const { count: submissionsCount, error: submissionsError } = await supabase
+      .from('submissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', team.id);
+
+    if (submissionsError) {
+      toast.error(submissionsError.message || 'Falha ao validar vinculos da equipe');
+      return;
+    }
+
+    if ((submissionsCount || 0) > 0) {
+      if (!confirm('Esta equipe possui submissões vinculadas e nao pode ser excluida. Deseja arquivar a equipe?')) return;
+      await handleArchiveTeam(team);
+      return;
+    }
+
+    const { error } = await supabase.from('teams').delete().eq('id', team.id);
+    if (error) {
+      if ((error as any)?.message?.includes('submissions_team_id_fkey')) {
+        toast.error('Nao e possivel excluir: esta equipe possui submissões vinculadas.');
+      } else {
+        toast.error(error.message || 'Falha ao excluir equipe');
+      }
+      return;
+    }
+
+    toast.success('Equipe excluida com sucesso');
+    if (chatTeam?.id === team.id) {
+      setChatTeam(null);
+    }
+    await loadTeams();
+  };
+
+  const handleArchiveTeam = async (team: any) => {
+    if (!isAdmin) {
+      toast.error('Somente administradores podem arquivar equipes');
+      return;
+    }
+
+    if (isClassGroupTeam(team)) {
+      toast.error('Equipes vinculadas a Turmas nao podem ser arquivadas por aqui.');
+      return;
+    }
+
+    const archivedName = isArchivedTeam(team) ? team.name : `[ARQUIVADA] ${team.name}`;
+
+    const { error: updateError } = await supabase
+      .from('teams')
+      .update({ name: archivedName, is_public: false })
+      .eq('id', team.id);
+
+    if (updateError) {
+      toast.error(updateError.message || 'Falha ao arquivar equipe');
+      return;
+    }
+
+    // Remove all memberships to hide archived team from normal users and disable chat access.
+    const { error: membersError } = await supabase.from('team_members').delete().eq('team_id', team.id);
+    if (membersError) {
+      toast.error(membersError.message || 'Equipe arquivada, mas houve falha ao remover membros');
+    } else {
+      toast.success('Equipe arquivada com sucesso');
+    }
+
+    if (chatTeam?.id === team.id) setChatTeam(null);
     await loadTeams();
   };
 
@@ -354,9 +488,20 @@ export default function TeamsPage() {
     await loadMessages(chatTeam.id);
   };
 
-  const filtered = teams.filter(tt =>
-    tt.name.toLowerCase().includes(search.toLowerCase()) ||
-    tt.code.toLowerCase().includes(search.toLowerCase())
+  const visibleMyTeams = myTeams.filter((team: any) => isAdmin || !isArchivedTeam(team));
+
+  const filteredPublicTeams = teams.filter(tt =>
+    tt.is_public === true &&
+    (isAdmin || !isArchivedTeam(tt)) &&
+    (tt.name.toLowerCase().includes(search.toLowerCase()) ||
+    tt.code.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const filteredPrivateTeams = teams.filter(tt =>
+    tt.is_public !== true &&
+    (isAdmin || !isArchivedTeam(tt)) &&
+    (tt.name.toLowerCase().includes(search.toLowerCase()) ||
+    tt.code.toLowerCase().includes(search.toLowerCase()))
   );
 
   // Chat view
@@ -416,7 +561,7 @@ export default function TeamsPage() {
               className="flex items-center gap-1 text-xs font-mono text-cyber-cyan cyber-btn-secondary py-1 px-2">
               <Copy size={12} /> {chatTeam.code}
             </button>
-            <button onClick={() => handleLeave(chatTeam.id)}
+            <button onClick={() => handleLeave(chatTeam)}
               className="cyber-btn-danger text-xs flex items-center gap-1 py-1 px-2">
               <LogOut size={12} /> {t('team.leave')}
             </button>
@@ -542,11 +687,11 @@ export default function TeamsPage() {
       </div>
 
       {/* My Teams */}
-      {myTeams.length > 0 && (
+      {visibleMyTeams.length > 0 && (
         <div>
           <h2 className="text-lg font-bold text-cyber-purple mb-3">Minhas Equipes</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {myTeams.map((team: any) => (
+            {visibleMyTeams.map((team: any) => (
               <div key={team.id} className="cyber-card-glow">
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -574,10 +719,24 @@ export default function TeamsPage() {
                     className="cyber-btn-primary flex-1 flex items-center justify-center gap-1 text-sm">
                     <MessageCircle size={14} /> {t('team.chat')}
                   </button>
-                  <button onClick={() => handleLeave(team.id)}
+                  <button onClick={() => handleLeave(team)}
                     className="cyber-btn-danger text-sm">
                     <LogOut size={14} />
                   </button>
+                  {isAdmin && !isClassGroupTeam(team) && !isArchivedTeam(team) && (
+                    <button onClick={() => handleArchiveTeam(team)}
+                      className="cyber-btn-secondary text-sm"
+                      title="Arquivar equipe">
+                      <Lock size={14} />
+                    </button>
+                  )}
+                  {isAdmin && !isClassGroupTeam(team) && (
+                    <button onClick={() => handleDeleteTeam(team)}
+                      className="cyber-btn-danger text-sm"
+                      title="Excluir equipe">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -590,14 +749,14 @@ export default function TeamsPage() {
         <h2 className="text-lg font-bold text-cyber-green mb-3">Equipes Públicas</h2>
         {loading ? (
           <div className="text-center py-8 text-gray-500">{t('common.loading')}</div>
-        ) : filtered.length === 0 ? (
+        ) : filteredPublicTeams.length === 0 ? (
           <div className="cyber-card text-center py-8">
             <Users size={48} className="mx-auto text-gray-600 mb-4" />
             <p className="text-gray-500">{t('team.no_teams')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((team: any) => (
+            {filteredPublicTeams.map((team: any) => (
               <div key={team.id} className="cyber-card">
                 <h3 className="font-bold text-white">{team.name}</h3>
                 <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
@@ -608,11 +767,84 @@ export default function TeamsPage() {
                   className="flex items-center gap-1 text-xs font-mono text-cyber-cyan mt-2">
                   <Copy size={12} /> {team.code}
                 </button>
+                {isAdmin && !isClassGroupTeam(team) && !isArchivedTeam(team) && (
+                  <div className="mt-3">
+                    <button onClick={() => handleArchiveTeam(team)}
+                      className="cyber-btn-secondary text-sm flex items-center gap-1"
+                      title="Arquivar equipe">
+                      <Lock size={14} /> Arquivar
+                    </button>
+                  </div>
+                )}
+                {isAdmin && !isClassGroupTeam(team) && (
+                  <div className="mt-3">
+                    <button onClick={() => handleDeleteTeam(team)}
+                      className="cyber-btn-danger text-sm flex items-center gap-1"
+                      title="Excluir equipe">
+                      <Trash2 size={14} /> Excluir
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Private Teams (Admin Only) */}
+      {isAdmin && (
+        <div>
+          <h2 className="text-lg font-bold text-cyber-purple mb-3">Equipes Privadas</h2>
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">{t('common.loading')}</div>
+          ) : filteredPrivateTeams.length === 0 ? (
+            <div className="cyber-card text-center py-8">
+              <Lock size={48} className="mx-auto text-gray-600 mb-4" />
+              <p className="text-gray-500">Nenhuma equipe privada encontrada</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredPrivateTeams.map((team: any) => (
+                <div key={team.id} className="cyber-card border-l-4 border-cyber-purple">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="font-bold text-white flex-1">{team.name}</h3>
+                    <Lock size={14} className="text-cyber-purple" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
+                    <Users size={14} className="text-cyber-cyan" />
+                    <span>{teamMemberCounts[team.id] || 0} {t('team.members')}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Criador: <span className="font-mono text-cyber-cyan">{team.created_by}</span>
+                  </div>
+                  <button onClick={() => { navigator.clipboard.writeText(team.code); toast.success(t('common.copied')); }}
+                    className="flex items-center gap-1 text-xs font-mono text-cyber-cyan mt-2">
+                    <Copy size={12} /> {team.code}
+                  </button>
+                  {isAdmin && !isClassGroupTeam(team) && !isArchivedTeam(team) && (
+                    <div className="mt-3">
+                      <button onClick={() => handleArchiveTeam(team)}
+                        className="cyber-btn-secondary text-sm flex items-center gap-1"
+                        title="Arquivar equipe">
+                        <Lock size={14} /> Arquivar
+                      </button>
+                    </div>
+                  )}
+                  {isAdmin && !isClassGroupTeam(team) && (
+                    <div className="mt-3">
+                      <button onClick={() => handleDeleteTeam(team)}
+                        className="cyber-btn-danger text-sm flex items-center gap-1"
+                        title="Excluir equipe">
+                        <Trash2 size={14} /> Excluir
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Team Modal */}
       <Modal isOpen={createModalOpen} onClose={() => setCreateModalOpen(false)} title={t('team.create')}>

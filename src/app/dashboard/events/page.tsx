@@ -27,6 +27,7 @@ interface Event {
   shell_reward: number;
   created_by: string;
   created_at: string;
+  class_ids?: string[]; // multiple classes via event_classes
 }
 
 export default function EventsPage() {
@@ -44,9 +45,18 @@ export default function EventsPage() {
   const emptyForm = {
     name: '', description: '', start_date: '', end_date: '',
     visibility: 'public', team_mode: 'event_teams', category: 'Tecnologia da Informação',
-    custom_category: '', league_code: '', class_id: '', image_url: '', shell_reward: 0,
+    custom_category: '', league_code: '', class_id: '', class_ids: [] as string[], image_url: '', shell_reward: 0,
   };
   const [form, setForm] = useState(emptyForm);
+
+  const toggleFormClass = (id: string) => {
+    setForm(prev => ({
+      ...prev,
+      class_ids: prev.class_ids.includes(id)
+        ? prev.class_ids.filter(c => c !== id)
+        : [...prev.class_ids, id],
+    }));
+  };
 
   const canManage = ['super_admin', 'admin', 'instructor'].includes(profile?.role || '');
 
@@ -129,25 +139,33 @@ export default function EventsPage() {
       let query = supabase.from('events').select('*').order('start_date', { ascending: false });
 
       if (profile?.role === 'competitor') {
-        // Competitors see public events + events from their classes
+        // Competitors see public events + events from their classes (via class_id OR event_classes)
         const { data: memberData } = await supabase
           .from('class_members').select('class_id').eq('user_id', profile.id).eq('status', 'active');
         const classIds = memberData?.map((m: any) => m.class_id) || [];
 
         if (classIds.length > 0) {
-          query = supabase.from('events').select('*')
-            .or(`visibility.eq.public,class_id.in.(${classIds.join(',')})`)
-            .order('start_date', { ascending: false });
-        } else {
-          query = supabase.from('events').select('*')
-            .eq('visibility', 'public')
-            .order('start_date', { ascending: false });
-        }
-      }
+          // Also get events via event_classes junction
+          const { data: ecData } = await supabase
+            .from('event_classes').select('event_id').in('class_id', classIds);
+          const extraEventIds = (ecData || []).map((e: any) => e.event_id);
 
-      const { data, error } = await query;
-      if (error) console.error('Events query error:', error.message);
-      if (!cancelled) setEvents(data || []);
+          const { data, error } = await supabase.from('events').select('*')
+            .or(`visibility.eq.public,class_id.in.(${classIds.join(',')}),id.in.(${[...new Set(extraEventIds)].join(',') || '00000000-0000-0000-0000-000000000000'})`)
+            .order('start_date', { ascending: false });
+          if (error) console.error('Events query error:', error.message);
+          if (!cancelled) setEvents(data || []);
+        } else {
+          const { data, error } = await supabase.from('events').select('*')
+            .eq('visibility', 'public').order('start_date', { ascending: false });
+          if (error) console.error('Events query error:', error.message);
+          if (!cancelled) setEvents(data || []);
+        }
+      } else {
+        const { data, error } = await query;
+        if (error) console.error('Events query error:', error.message);
+        if (!cancelled) setEvents(data || []);
+      }
     } catch (err) {
       console.error('loadEvents exception:', err);
     } finally {
@@ -174,21 +192,33 @@ export default function EventsPage() {
       category: form.category,
       custom_category: form.category === 'Customizar Tipo' ? form.custom_category : null,
       league_code: form.league_code || null,
-      class_id: form.class_id || null,
+      class_id: form.class_ids[0] || form.class_id || null, // keep legacy field for compatibility
       image_url: form.image_url || null,
       shell_reward: form.shell_reward || 0,
       updated_at: new Date().toISOString(),
     };
 
+    let eventId = editingEvent?.id;
     if (editingEvent) {
       const { error } = await supabase.from('events').update(payload).eq('id', editingEvent.id);
       if (error) { toast.error(error.message); return; }
       toast.success('Evento atualizado!');
     } else {
-      const { error } = await supabase.from('events')
-        .insert({ ...payload, created_by: profile?.id });
+      const { data: newEvent, error } = await supabase.from('events')
+        .insert({ ...payload, created_by: profile?.id }).select().single();
       if (error) { toast.error(error.message); return; }
+      eventId = newEvent.id;
       toast.success('Evento criado!');
+    }
+
+    // Sync event_classes: remove old, insert new
+    if (eventId && form.class_ids.length > 0) {
+      await supabase.from('event_classes').delete().eq('event_id', eventId);
+      if (form.class_ids.length > 0) {
+        await supabase.from('event_classes').insert(
+          form.class_ids.map(cid => ({ event_id: eventId, class_id: cid }))
+        );
+      }
     }
 
     setModalOpen(false);
@@ -197,8 +227,15 @@ export default function EventsPage() {
     await loadEvents();
   };
 
-  const handleEdit = (event: Event) => {
+  const handleEdit = async (event: Event) => {
     setEditingEvent(event);
+    // Load existing event_classes
+    const { data: ecData } = await supabase.from('event_classes').select('class_id').eq('event_id', event.id);
+    const classIds = (ecData || []).map((e: any) => e.class_id);
+    // If legacy class_id exists and not in classIds, include it
+    const merged = event.class_id && !classIds.includes(event.class_id)
+      ? [event.class_id, ...classIds]
+      : classIds;
     setForm({
       name: event.name, description: event.description,
       start_date: event.start_date?.slice(0, 16) || '',
@@ -206,6 +243,7 @@ export default function EventsPage() {
       visibility: event.visibility, team_mode: event.team_mode,
       category: event.category, custom_category: event.custom_category || '',
       league_code: event.league_code || '', class_id: event.class_id || '',
+      class_ids: merged,
       image_url: event.image_url || '', shell_reward: event.shell_reward,
     });
     setModalOpen(true);
@@ -428,13 +466,23 @@ export default function EventsPage() {
               </div>
             )}
             <div>
-              <label className="cyber-label">{t('event.class')} ({t('common.optional')})</label>
-              <select value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })} className="cyber-select">
-                <option value="">{t('common.none')}</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                ))}
-              </select>
+              <label className="cyber-label">{t('event.class')} ({t('common.optional')}) — selecione múltiplas</label>
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-cyber-border p-2 space-y-1">
+                {classes.map((c) => {
+                  const sel = form.class_ids.includes(c.id);
+                  return (
+                    <div key={c.id} onClick={() => toggleFormClass(c.id)}
+                      className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors text-sm ${sel ? 'bg-cyber-cyan/10 border border-cyber-cyan/30' : 'hover:bg-white/5'}`}>
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${sel ? 'bg-cyber-cyan border-cyber-cyan' : 'border-gray-500'}`}>
+                        {sel && <span className="text-black text-xs font-bold">✓</span>}
+                      </div>
+                      <span className="text-gray-300">{c.name}</span>
+                      <span className="text-gray-600 font-mono text-xs ml-auto">{c.code}</span>
+                    </div>
+                  );
+                })}
+                {classes.length === 0 && <p className="text-gray-600 text-xs text-center py-2">Nenhuma turma cadastrada</p>}
+              </div>
             </div>
             <div>
               <label className="cyber-label">{t('event.league_code')} ({t('common.optional')})</label>

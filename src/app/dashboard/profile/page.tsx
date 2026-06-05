@@ -7,17 +7,21 @@ import { createClient } from '@/lib/supabase';
 import BadgeDisplay from '@/components/BadgeDisplay';
 import {
   User, Edit2, Save, X, Trophy, Target, CheckCircle, XCircle, Award, Zap,
-  BookOpen, Shield, Calendar, BarChart3, PieChart
+  BookOpen, Shield, Calendar, BarChart3, PieChart, Lock, Eye, EyeOff
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { calculateXpProgress, CATEGORIES } from '@/lib/utils';
 
 export default function ProfilePage() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, changePassword } = useAuth();
   const { t } = useI18n();
   const supabase = createClient();
 
   const [editing, setEditing] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: '', new: '', confirm: '' });
+  const [showPw, setShowPw] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
   const [form, setForm] = useState({
     display_name: '',
     bio: '',
@@ -122,6 +126,24 @@ export default function ProfilePage() {
     setEditing(false);
   };
 
+  const handleChangePassword = async () => {
+    if (!pwForm.new || pwForm.new.length < 8) {
+      toast.error('Nova senha deve ter pelo menos 8 caracteres');
+      return;
+    }
+    if (pwForm.new !== pwForm.confirm) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+    setPwLoading(true);
+    const { error } = await changePassword(pwForm.new);
+    setPwLoading(false);
+    if (error) { toast.error(error); return; }
+    toast.success('Senha alterada com sucesso!');
+    setChangingPassword(false);
+    setPwForm({ current: '', new: '', confirm: '' });
+  };
+
   if (!profile) return null;
 
   const xp = calculateXpProgress(profile.xp_points);
@@ -154,6 +176,10 @@ export default function ProfilePage() {
           <button onClick={() => setEditing(!editing)}
             className={`cyber-btn-${editing ? 'danger' : 'secondary'} flex items-center gap-2 text-sm shrink-0`}>
             {editing ? <><X size={14} /> {t('common.cancel')}</> : <><Edit2 size={14} /> {t('profile.edit')}</>}
+          </button>
+          <button onClick={() => { setChangingPassword(!changingPassword); setEditing(false); }}
+            className={`cyber-btn-${changingPassword ? 'danger' : 'secondary'} flex items-center gap-2 text-sm shrink-0`}>
+            {changingPassword ? <><X size={14} /> Cancelar</> : <><Lock size={14} /> Alterar Senha</>}
           </button>
         </div>
 
@@ -217,6 +243,51 @@ export default function ProfilePage() {
           <div className="flex justify-end">
             <button onClick={handleSave} className="cyber-btn-primary flex items-center gap-2">
               <Save size={16} /> {t('common.save')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Form */}
+      {changingPassword && (
+        <div className="cyber-card animate-slide-in space-y-4">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Lock size={18} className="text-amber-400" /> Alterar Senha de Acesso
+          </h2>
+          <div className="relative">
+            <label className="cyber-label">Nova Senha</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={pwForm.new}
+              onChange={e => setPwForm({ ...pwForm, new: e.target.value })}
+              className="cyber-input pr-10"
+              placeholder="Mínimo 8 caracteres"
+            />
+            <button type="button" onClick={() => setShowPw(!showPw)}
+              className="absolute right-3 top-8 text-gray-500 hover:text-gray-300">
+              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <div>
+            <label className="cyber-label">Confirmar Nova Senha</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={pwForm.confirm}
+              onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })}
+              className="cyber-input"
+              placeholder="Repita a nova senha"
+            />
+          </div>
+          {pwForm.new && pwForm.confirm && pwForm.new !== pwForm.confirm && (
+            <p className="text-xs text-red-400">As senhas não coincidem</p>
+          )}
+          <div className="flex justify-end gap-3">
+            <button onClick={() => { setChangingPassword(false); setPwForm({ current: '', new: '', confirm: '' }); }}
+              className="cyber-btn-secondary">{t('common.cancel')}</button>
+            <button onClick={handleChangePassword} disabled={pwLoading}
+              className="cyber-btn-primary flex items-center gap-2">
+              {pwLoading ? <span className="animate-spin">...</span> : <Save size={16} />}
+              Salvar Nova Senha
             </button>
           </div>
         </div>

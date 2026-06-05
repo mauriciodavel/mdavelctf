@@ -46,8 +46,8 @@ export default function RegisterPage() {
     if (error) {
       toast.error(error);
     } else {
-      toast.success('Cadastro realizado! Verifique seu e-mail para confirmar.');
-      router.push('/');
+      toast.success('Cadastro realizado! Bem-vindo à plataforma.');
+      router.push('/dashboard');
     }
   };
 

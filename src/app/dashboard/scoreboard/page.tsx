@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
-import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb, Clock } from 'lucide-react';
+import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb, Clock, RefreshCw } from 'lucide-react';
 
 interface ScoreEntry {
   position: number;
@@ -29,10 +29,13 @@ export default function ScoreboardPage() {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [leagues, setLeagues] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const [filterMode, setFilterMode] = useState<'individual' | 'team'>('individual');
   const [filterEvent, setFilterEvent] = useState<string>('all');
   const [filterLeague, setFilterLeague] = useState<string>('all');
+  const [filterClass, setFilterClass] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -61,17 +64,27 @@ export default function ScoreboardPage() {
     };
     load();
     return () => { cancelled = true; };
-  }, [filterMode, filterEvent, filterLeague]);
+  }, [filterMode, filterEvent, filterLeague, filterClass, lastRefresh]);
+
+  // Auto-refresh every 60 seconds (only scoreboard data, not full page)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLastRefresh(new Date());
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadFilters = async (cancelled = false) => {
     try {
-      const [{ data: evts }, { data: lgs }] = await Promise.all([
+      const [{ data: evts }, { data: lgs }, { data: cls }] = await Promise.all([
         supabase.from('events').select('id, name, start_date, end_date').order('start_date', { ascending: false }),
-        supabase.from('leagues').select('id, name')
+        supabase.from('leagues').select('id, name'),
+        supabase.from('classes').select('id, name'),
       ]);
       if (!cancelled) {
         setEvents(evts || []);
         setLeagues(lgs || []);
+        setClasses(cls || []);
       }
     } catch (err) {
       console.error('loadFilters exception:', err);
@@ -129,13 +142,30 @@ export default function ScoreboardPage() {
 
       const { data: challengeData } = await challengeQuery;
 
-      const filteredChallenges = (challengeData || []).filter((c: any) => {
+      let filteredChallenges = (challengeData || []).filter((c: any) => {
         if (relevantEventIds) {
           const eventId = c.missions?.event_id;
           return eventId && relevantEventIds.has(eventId);
         }
         return true;
       });
+
+      // Apply class filter: keep only challenges from events linked to selected class
+      if (filterClass !== 'all') {
+        // Get event_ids linked to this class (via class_id or event_classes)
+        const [{ data: directEvts }, { data: ecEvts }] = await Promise.all([
+          supabase.from('events').select('id').eq('class_id', filterClass),
+          supabase.from('event_classes').select('event_id').eq('class_id', filterClass),
+        ]);
+        const classEventIds = new Set([
+          ...(directEvts || []).map((e: any) => e.id),
+          ...(ecEvts || []).map((e: any) => e.event_id),
+        ]);
+        filteredChallenges = filteredChallenges.filter((c: any) => {
+          const eventId = c.missions?.event_id;
+          return eventId && classEventIds.has(eventId);
+        });
+      }
 
       const relevantChallengeIds = filteredChallenges.map((c: any) => c.id);
       const totalChallenges = relevantChallengeIds.length;
@@ -341,17 +371,29 @@ export default function ScoreboardPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Trophy className="text-amber-400" size={28} /> {t('nav.scoreboard')}
         </h1>
-        <button onClick={() => setShowFilters(!showFilters)}
-          className="cyber-btn-secondary flex items-center gap-2 text-sm">
-          <Filter size={16} /> {t('scoreboard.filters')}
-          <ChevronDown size={14} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLastRefresh(new Date())}
+            title="Atualizar placar"
+            className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-cyber-cyan transition-colors border border-cyber-border"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <span className="text-xs text-gray-600">
+            {lastRefresh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+          <button onClick={() => setShowFilters(!showFilters)}
+            className="cyber-btn-secondary flex items-center gap-2 text-sm">
+            <Filter size={16} /> {t('scoreboard.filters')}
+            <ChevronDown size={14} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
       {showFilters && (
         <div className="cyber-card space-y-4 animate-slide-in">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="cyber-label">{t('scoreboard.mode')}</label>
               <div className="flex gap-2">
@@ -389,6 +431,15 @@ export default function ScoreboardPage() {
                 <option value="all">{t('scoreboard.all_leagues')}</option>
                 {leagues.map(lg => (
                   <option key={lg.id} value={lg.id}>{lg.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="cyber-label">Turma</label>
+              <select value={filterClass} onChange={(e) => setFilterClass(e.target.value)} className="cyber-select">
+                <option value="all">Todas as turmas</option>
+                {classes.map(cls => (
+                  <option key={cls.id} value={cls.id}>{cls.name}</option>
                 ))}
               </select>
             </div>

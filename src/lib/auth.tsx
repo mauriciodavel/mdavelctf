@@ -33,6 +33,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  changePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -184,33 +185,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // ─── Track active time ───────────────────────────────────────────
+  // Save accumulated active seconds every 60s when user is active
+  const activeSecondsRef = useRef<number>(0);
+  const lastSaveRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (!user) return;
+    const saveInterval = setInterval(async () => {
+      const now = Date.now();
+      const idle = now - lastActivityRef.current;
+      // Only accumulate if user was active in the last 5 minutes
+      if (idle < 5 * 60 * 1000) {
+        const elapsed = Math.floor((now - lastSaveRef.current) / 1000);
+        activeSecondsRef.current += elapsed;
+        lastSaveRef.current = now;
+        // Flush to DB every 5 minutes worth of active time or every 5 save cycles
+        if (activeSecondsRef.current >= 60) {
+          const toSave = activeSecondsRef.current;
+          activeSecondsRef.current = 0;
+          try {
+            await supabase.rpc('increment_active_seconds', {
+              p_user_id: user.id,
+              p_seconds: toSave,
+            });
+          } catch {
+            // Best-effort metric update.
+          }
+        }
+      } else {
+        lastSaveRef.current = now;
+      }
+    }, 60_000);
+    return () => clearInterval(saveInterval);
+  }, [user, supabase]);
+
   const signIn = async (email: string, password: string) => {
     isSigningOutRef.current = false;
     lastActivityRef.current = Date.now();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error && data.user) {
+      // Record last login timestamp
+      supabase.from('profiles')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', data.user.id)
+        .then(() => {});
+    }
     return { error: error?.message || null };
   };
 
   const signUp = async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-      },
+    // Use admin API route to create user without email confirmation
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), password, displayName: displayName.trim() }),
     });
+    const json = await res.json();
+    if (!res.ok) return { error: json.error || 'Erro ao criar conta' };
+    // Auto-sign in after registration
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: signInError?.message || null };
+  };
+
+  const changePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     return { error: error?.message || null };
   };
 
   const signOut = useCallback(async () => {
     isSigningOutRef.current = true;
+    // Flush remaining active seconds
+    if (user && activeSecondsRef.current > 0) {
+      try {
+        await supabase.rpc('increment_active_seconds', {
+          p_user_id: user.id,
+          p_seconds: activeSecondsRef.current,
+        });
+      } catch {
+        // Best-effort metric update.
+      }
+      activeSecondsRef.current = 0;
+    }
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
-  }, [supabase]);
+  }, [user, supabase]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, initialized, sessionKey, signIn, signUp, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, initialized, sessionKey, signIn, signUp, signOut, refreshProfile, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

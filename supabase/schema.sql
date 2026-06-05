@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
   code CHAR(6) NOT NULL UNIQUE DEFAULT generate_code(6),
   name TEXT NOT NULL,
   is_public BOOLEAN NOT NULL DEFAULT false,
-  image_url TEXT,
+  image_url TEXT UNIQUE,
   created_by UUID REFERENCES public.profiles(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -759,3 +759,150 @@ CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON public.team_members(team_
 CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON public.team_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_team_id ON public.chat_messages(team_id);
 CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON public.user_badges(user_id);
+
+-- ============================================================
+-- ADDITIONS v2 — New features
+-- ============================================================
+
+-- 1. Activity tracking columns on profiles
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS total_active_seconds INTEGER NOT NULL DEFAULT 0;
+
+-- 2. EVENT CLASSES — link multiple classes to one event
+CREATE TABLE IF NOT EXISTS public.event_classes (
+  event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+  class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
+  PRIMARY KEY (event_id, class_id)
+);
+
+ALTER TABLE public.event_classes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Event classes viewable by authenticated"
+  ON public.event_classes FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "Instructors and admins manage event classes"
+  ON public.event_classes FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.events e
+      WHERE e.id = event_id AND (
+        e.created_by = auth.uid()
+        OR EXISTS (
+          SELECT 1 FROM public.profiles
+          WHERE id = auth.uid()
+          AND role IN ('super_admin', 'admin')
+        )
+      )
+    )
+  );
+
+-- 3. CLASS GROUPS — groups inside a class
+CREATE TABLE IF NOT EXISTS public.class_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  max_members INTEGER, -- NULL = unlimited
+  allow_self_enroll BOOLEAN NOT NULL DEFAULT true,
+  created_by UUID REFERENCES public.profiles(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.class_groups ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Class groups viewable by authenticated"
+  ON public.class_groups FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "Instructors and admins manage class groups"
+  ON public.class_groups FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.classes c
+      WHERE c.id = class_id AND (
+        c.instructor_id = auth.uid()
+        OR EXISTS (
+          SELECT 1 FROM public.profiles
+          WHERE id = auth.uid()
+          AND role IN ('super_admin', 'admin')
+        )
+      )
+    )
+  );
+
+-- 4. CLASS GROUP MEMBERS
+CREATE TABLE IF NOT EXISTS public.class_group_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES public.class_groups(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(group_id, user_id)
+);
+
+ALTER TABLE public.class_group_members ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Class group members viewable by authenticated"
+  ON public.class_group_members FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "Users can self-enroll in open groups"
+  ON public.class_group_members FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.class_groups cg
+      WHERE cg.id = group_id
+        AND cg.allow_self_enroll = true
+        AND (
+          cg.max_members IS NULL
+          OR (SELECT COUNT(*) FROM public.class_group_members cgm WHERE cgm.group_id = cg.id) < cg.max_members
+        )
+    )
+  );
+
+CREATE POLICY "Instructors and admins manage group members"
+  ON public.class_group_members FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.class_groups cg
+      JOIN public.classes c ON c.id = cg.class_id
+      WHERE cg.id = group_id AND (
+        c.instructor_id = auth.uid()
+        OR EXISTS (
+          SELECT 1 FROM public.profiles
+          WHERE id = auth.uid()
+          AND role IN ('super_admin', 'admin')
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can remove themselves from groups"
+  ON public.class_group_members FOR DELETE
+  TO authenticated
+  USING (user_id = auth.uid());
+
+-- Function to safely increment active seconds
+CREATE OR REPLACE FUNCTION public.increment_active_seconds(p_user_id UUID, p_seconds INTEGER)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE public.profiles
+  SET total_active_seconds = total_active_seconds + p_seconds,
+      updated_at = NOW()
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Indexes for new tables
+CREATE INDEX IF NOT EXISTS idx_event_classes_event_id ON public.event_classes(event_id);
+CREATE INDEX IF NOT EXISTS idx_event_classes_class_id ON public.event_classes(class_id);
+CREATE INDEX IF NOT EXISTS idx_class_groups_class_id ON public.class_groups(class_id);
+CREATE INDEX IF NOT EXISTS idx_class_group_members_group_id ON public.class_group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_class_group_members_user_id ON public.class_group_members(user_id);
