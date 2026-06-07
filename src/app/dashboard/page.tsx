@@ -7,12 +7,13 @@ import { createClient } from '@/lib/supabase';
 import StatsCard from '@/components/StatsCard';
 import {
   Flag, Users, Trophy, BarChart3, Zap, Lightbulb, Clock, Target,
-  GraduationCap, BookOpen, Activity, TrendingUp, Eye, CheckCircle2
+  GraduationCap, BookOpen, Activity, TrendingUp, Eye, CheckCircle2,
+  ChevronDown, ChevronRight
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const supabase = createClient();
   const [stats, setStats] = useState({
     totalEvents: 0,
@@ -30,6 +31,17 @@ export default function DashboardPage() {
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedInstructorGuide, setExpandedInstructorGuide] = useState<Set<string>>(new Set(['instr_flow_order']));
+  const [expandedCompetitorGuide, setExpandedCompetitorGuide] = useState<Set<string>>(new Set(['comp_start_here']));
+
+  const toggleGuideSection = (key: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +142,149 @@ export default function DashboardPage() {
 
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
   const isInstructor = profile?.role === 'instructor';
+
+  const isPtBr = locale === 'pt-BR';
+
+  const instructorGuideSections = [
+    {
+      key: 'instr_flow_order',
+      title: isPtBr ? 'Fluxo principal (ordem recomendada)' : 'Main flow (recommended order)',
+      lines: isPtBr
+        ? [
+            '1) Crie a Turma e gere o código de acesso.',
+            '2) (Opcional) Crie Grupos na turma para organizar equipes/perfis.',
+            '3) (Opcional) Crie uma Liga para agrupar eventos da temporada.',
+            '4) Crie o Evento e vincule à turma (se restrito) e à liga (se houver).',
+            '5) Cadastre Missões e, depois, os Desafios de cada missão.',
+            '6) Defina Requisito de conclusão quando quiser progressão por etapa.',
+            '7) Revise datas/status e publique quando tudo estiver validado.',
+          ]
+        : [
+            '1) Create the Class and generate the access code.',
+            '2) (Optional) Create Class Groups to organize teams/profiles.',
+            '3) (Optional) Create a League to group season events.',
+            '4) Create the Event and link it to class (if restricted) and league (if used).',
+            '5) Add Missions and then Challenges inside each mission.',
+            '6) Set Completion Requirement when you want progression by stages.',
+            '7) Review dates/status and publish only after final validation.',
+          ],
+    },
+    {
+      key: 'instr_alt_league',
+      title: isPtBr ? 'Com liga vs sem liga' : 'With league vs without league',
+      lines: isPtBr
+        ? [
+            'Com liga: use para temporada contínua e análise de múltiplos eventos.',
+            'Sem liga: use para atividade pontual, hackathon interno ou prova única.',
+          ]
+        : [
+            'With league: use for ongoing seasons and multi-event analysis.',
+            'Without league: use for one-off activity, internal hackathon, or single assessment.',
+          ],
+    },
+    {
+      key: 'instr_alt_groups',
+      title: isPtBr ? 'Turma com grupos vs sem grupos' : 'Class with groups vs without groups',
+      lines: isPtBr
+        ? [
+            'Com grupos: melhor para divisão de sala, rodízio e equipes fixas.',
+            'Sem grupos: ideal para turmas menores ou quando não há segmentação.',
+          ]
+        : [
+            'With groups: better for class split, rotations, and fixed teams.',
+            'Without groups: ideal for smaller classes or when segmentation is unnecessary.',
+          ],
+    },
+    {
+      key: 'instr_csv',
+      title: isPtBr ? 'Cadastro em massa via CSV' : 'Bulk enrollment via CSV',
+      lines: isPtBr
+        ? [
+            'Use o upload CSV para cadastrar competidores em lote.',
+            'Fluxo sugerido: criar turma -> criar grupos -> importar CSV -> revisar vínculos.',
+            'Confirme status ativo e associação correta antes de iniciar o evento.',
+          ]
+        : [
+            'Use CSV upload to register competitors in batches.',
+            'Suggested flow: create class -> create groups -> import CSV -> review links.',
+            'Confirm active status and correct associations before event start.',
+          ],
+    },
+    {
+      key: 'instr_prereq',
+      title: isPtBr ? 'Desafios com/sem bloqueio por requisito' : 'Challenges with/without prerequisite lock',
+      lines: isPtBr
+        ? [
+            'Sem requisito: competidor acessa o desafio assim que a missão estiver disponível.',
+            'Com requisito: selecione um desafio anterior como pré-condição de acesso.',
+            'Se necessário, use Liberação manual no card para abrir acesso sem requisito concluído.',
+          ]
+        : [
+            'Without prerequisite: competitor can access challenge as soon as mission is available.',
+            'With prerequisite: select a previous challenge as access condition.',
+            'If needed, use Manual unlock on the card to grant access without solved prerequisite.',
+          ],
+    },
+  ];
+
+  const competitorGuideSections = [
+    {
+      key: 'comp_start_here',
+      title: isPtBr ? 'Comece por aqui' : 'Start here',
+      lines: isPtBr
+        ? [
+            '1) Entre em uma turma pelo código do instrutor (se o evento for restrito).',
+            '2) Verifique se o evento está Ao Vivo antes de tentar enviar flag.',
+            '3) Escolha a missão e avance pelos desafios da sequência definida.',
+          ]
+        : [
+            '1) Join a class with the instructor code (if event is restricted).',
+            '2) Check if the event is Live before attempting flag submission.',
+            '3) Pick a mission and move through challenges in the defined sequence.',
+          ],
+    },
+    {
+      key: 'comp_with_without_group',
+      title: isPtBr ? 'Com grupo/equipe vs individual' : 'With team/group vs individual',
+      lines: isPtBr
+        ? [
+            'Em equipe: se um membro resolver, os demais não submetem a mesma flag.',
+            'Individual: todo progresso e pontuação ficam 100% no seu usuário.',
+          ]
+        : [
+            'Team mode: if one member solves it, others cannot submit the same flag.',
+            'Individual mode: all progress and score remain fully on your user account.',
+          ],
+    },
+    {
+      key: 'comp_prereq_flow',
+      title: isPtBr ? 'Desafios bloqueados por requisito' : 'Prerequisite-locked challenges',
+      lines: isPtBr
+        ? [
+            'Alguns desafios exigem resolver um desafio anterior primeiro.',
+            'Enquanto bloqueado, você verá apenas informações mínimas do card.',
+            'O instrutor pode liberar manualmente o acesso em casos específicos.',
+          ]
+        : [
+            'Some challenges require solving a previous challenge first.',
+            'While locked, you see only minimal card information.',
+            'Instructor can manually unlock access in specific cases.',
+          ],
+    },
+    {
+      key: 'comp_hints',
+      title: isPtBr ? 'Uso estratégico de dicas' : 'Strategic hint usage',
+      lines: isPtBr
+        ? [
+            'Use Shells para desbloquear dicas apenas quando necessário.',
+            'Planeje as tentativas para não esgotar o limite em desafios críticos.',
+          ]
+        : [
+            'Spend Shells on hints only when necessary.',
+            'Plan attempts carefully to avoid exhausting limits on critical challenges.',
+          ],
+    },
+  ];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -243,19 +398,29 @@ export default function DashboardPage() {
             <h3 className="text-lg font-bold text-cyber-cyan mb-4 flex items-center gap-2">
               <BookOpen size={20} /> {t('dash.quick_guide')}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg bg-white/5 border border-cyber-border">
-                <h4 className="font-semibold text-cyber-cyan mb-2">1. Criar Turma</h4>
-                <p className="text-sm text-gray-400">Vá em Turmas e crie uma nova turma. Compartilhe o código com seus alunos.</p>
-              </div>
-              <div className="p-4 rounded-lg bg-white/5 border border-cyber-border">
-                <h4 className="font-semibold text-cyber-purple mb-2">2. Criar Evento</h4>
-                <p className="text-sm text-gray-400">Crie um evento e vincule à sua turma. Adicione missões e desafios.</p>
-              </div>
-              <div className="p-4 rounded-lg bg-white/5 border border-cyber-border">
-                <h4 className="font-semibold text-cyber-green mb-2">3. Acompanhar</h4>
-                <p className="text-sm text-gray-400">Acompanhe o progresso dos alunos no placar e nas submissões.</p>
-              </div>
+            <div className="space-y-3">
+              {instructorGuideSections.map((section) => {
+                const isOpen = expandedInstructorGuide.has(section.key);
+                return (
+                  <div key={section.key} className="rounded-lg bg-white/5 border border-cyber-border p-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleGuideSection(section.key, setExpandedInstructorGuide)}
+                      className="w-full flex items-center justify-between text-left"
+                    >
+                      <h4 className="font-semibold text-cyber-cyan text-sm">{section.title}</h4>
+                      {isOpen ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                    </button>
+                    {isOpen && (
+                      <div className="mt-2 space-y-1.5 pl-3 border-l border-cyber-cyan/30">
+                        {section.lines.map((line, idx) => (
+                          <p key={idx} className="text-xs text-gray-300">{line}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
@@ -287,22 +452,28 @@ export default function DashboardPage() {
                 <BookOpen size={20} /> {t('dash.quick_guide')}
               </h3>
               <div className="space-y-3">
-                <div className="p-3 rounded-lg bg-white/5 border border-cyber-border">
-                  <h4 className="font-semibold text-cyber-cyan text-sm">🏫 Ingressar em Turma</h4>
-                  <p className="text-xs text-gray-400 mt-1">Use o código fornecido pelo instrutor para ingressar em uma turma.</p>
-                </div>
-                <div className="p-3 rounded-lg bg-white/5 border border-cyber-border">
-                  <h4 className="font-semibold text-cyber-purple text-sm">🚩 Resolver Desafios</h4>
-                  <p className="text-xs text-gray-400 mt-1">Acesse eventos e resolva desafios para ganhar pontos e subir no ranking.</p>
-                </div>
-                <div className="p-3 rounded-lg bg-white/5 border border-cyber-border">
-                  <h4 className="font-semibold text-cyber-green text-sm">👥 Criar Equipe</h4>
-                  <p className="text-xs text-gray-400 mt-1">Forme uma equipe para competir em grupo e usar o chat interno.</p>
-                </div>
-                <div className="p-3 rounded-lg bg-white/5 border border-cyber-border">
-                  <h4 className="font-semibold text-amber-400 text-sm">🏆 Conquiste Badges</h4>
-                  <p className="text-xs text-gray-400 mt-1">Complete conquistas especiais para ganhar medalhas e recompensas em Shells.</p>
-                </div>
+                {competitorGuideSections.map((section) => {
+                  const isOpen = expandedCompetitorGuide.has(section.key);
+                  return (
+                    <div key={section.key} className="p-3 rounded-lg bg-white/5 border border-cyber-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleGuideSection(section.key, setExpandedCompetitorGuide)}
+                        className="w-full flex items-center justify-between text-left"
+                      >
+                        <h4 className="font-semibold text-cyber-cyan text-sm">{section.title}</h4>
+                        {isOpen ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                      </button>
+                      {isOpen && (
+                        <div className="mt-2 space-y-1.5 pl-3 border-l border-cyber-cyan/30">
+                          {section.lines.map((line, idx) => (
+                            <p key={idx} className="text-xs text-gray-300">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

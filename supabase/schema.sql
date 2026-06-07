@@ -296,6 +296,9 @@ CREATE TABLE IF NOT EXISTS public.challenges (
   difficulty TEXT DEFAULT 'medio',
   what_i_learned TEXT,
   learn_more_url TEXT,
+  requires_completion BOOLEAN NOT NULL DEFAULT false,
+  required_challenge_id UUID REFERENCES public.challenges(id) ON DELETE SET NULL,
+  manual_unlock_enabled BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -750,6 +753,7 @@ CREATE INDEX IF NOT EXISTS idx_events_created_by ON public.events(created_by);
 CREATE INDEX IF NOT EXISTS idx_events_class_id ON public.events(class_id);
 CREATE INDEX IF NOT EXISTS idx_missions_event_id ON public.missions(event_id);
 CREATE INDEX IF NOT EXISTS idx_challenges_mission_id ON public.challenges(mission_id);
+CREATE INDEX IF NOT EXISTS idx_challenges_required_challenge_id ON public.challenges(required_challenge_id);
 CREATE INDEX IF NOT EXISTS idx_hints_challenge_id ON public.hints(challenge_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.submissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_challenge_id ON public.submissions(challenge_id);
@@ -768,6 +772,12 @@ CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON public.user_badges(user_id
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS total_active_seconds INTEGER NOT NULL DEFAULT 0;
+
+-- 1.1 Challenge dependency and manual unlock controls
+ALTER TABLE public.challenges
+  ADD COLUMN IF NOT EXISTS requires_completion BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS required_challenge_id UUID REFERENCES public.challenges(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS manual_unlock_enabled BOOLEAN NOT NULL DEFAULT false;
 
 -- 2. EVENT CLASSES — link multiple classes to one event
 CREATE TABLE IF NOT EXISTS public.event_classes (

@@ -67,6 +67,15 @@ Resumo: o sistema agora reativa vínculo existente (`status = active`) em vez de
 10. Separação de listagens em Equipes Públicas e Equipes Privadas.
 Resumo: a página de equipes agora distingue seções por visibilidade; admin visualiza ambas, e não-admin só vê privadas quando é criador ou membro.
 
+11. Requisito de conclusão e Liberação manual de desafios.
+Resumo: ao cadastrar um desafio o instrutor pode ativar o toggle "Requisito de conclusão" e selecionar um desafio anterior como pré-condição de acesso. Enquanto o requisito não for resolvido (pelo competidor ou por alguém da equipe/grupo), o desafio fica bloqueado — exibindo apenas título e contagem de dicas. Admin/instrutor têm um toggle de "Liberação manual" em cada card para abrir o acesso dos competidores a qualquer momento.
+
+12. Central de Ajuda com novas seções de fluxo.
+Resumo: adicionadas as seções "Ordem Recomendada de Configuração", "Fluxos Alternativos" (com/sem liga, com/sem grupos, sem turma) e "Cadastro em Massa (CSV) e Grupos". A seção de Desafios foi atualizada para documentar requisito, bloqueio e liberação manual.
+
+13. Guia Rápido com seções expansíveis e bilíngue.
+Resumo: os cards estáticos do Guia Rápido de instrutor e aluno foram convertidos em seções expansíveis/recolhíveis por fluxo (fluxo principal, com/sem liga, com/sem grupos, CSV, requisito de desafio). Todos os textos são bilíngues (pt-BR/en) via `locale`.
+
 ---
 
 ## Tech Stack
@@ -161,7 +170,7 @@ newmdavelctf/
 | 4 | `class_members` | Membros de turmas (status: active/inactive/removed) |
 | 5 | `events` | Eventos CTF (datas, visibilidade, team_mode, categoria) |
 | 6 | `missions` | Missões dentro de eventos (dificuldade, download_links) |
-| 7 | `challenges` | Desafios/flags (pontos, max_attempts, flag secreta, dificuldade, aprendizado, link) |
+| 7 | `challenges` | Desafios/flags (pontos, max_attempts, flag secreta, dificuldade, aprendizado, link, `requires_completion`, `required_challenge_id`, `manual_unlock_enabled`) |
 | 8 | `hints` | Dicas com custo em Shells |
 | 9 | `hint_usage` | Registro de dicas desbloqueadas por usuário |
 | 10 | `teams` | Equipes (código 6 chars, pública/privada) |
@@ -192,7 +201,7 @@ Todas as 17 tabelas possuem RLS habilitado com políticas baseadas em:
 
 ### Indexes de Performance
 
-Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id)`, `missions(event_id)`, `challenges(mission_id)`, `hints(challenge_id)`, `submissions(user_id, challenge_id)`, `class_members(class_id, user_id)`, `team_members(team_id, user_id)`, `chat_messages(team_id)`, `user_badges(user_id)`.
+Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id)`, `missions(event_id)`, `challenges(mission_id)`, `challenges(required_challenge_id)`, `hints(challenge_id)`, `submissions(user_id, challenge_id)`, `class_members(class_id, user_id)`, `team_members(team_id, user_id)`, `chat_messages(team_id)`, `user_badges(user_id)`.
 
 ---
 
@@ -250,6 +259,9 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
   - **Onde aprender mais sobre isso?**: URL de referência externa
 - Sistema de dicas com custo em Shells — CRUD completo (adicionar, editar, excluir)
   - **Botão de dica inline**: cada card de desafio tem botão de adicionar dica direto, sem precisar subir ao topo
+- **Requisito de conclusão**: toggle no cadastro do desafio; ao ativar, um select lista os desafios anteriores da missão — o selecionado é o pré-requisito de acesso
+- **Bloqueio por requisito**: competidor vê apenas título e contagem de dicas enquanto o pré-requisito (individual ou equipe) não for resolvido
+- **Liberação manual**: toggle em cada card de desafio visível somente para admin/instrutor — libera acesso dos competidores independentemente do requisito
 - **Visibilidade inteligente** de conteúdo sensível:
   - **Super Admin / Admin**: veem dicas, "O que aprendi" e "Saiba mais" de todos os desafios
   - **Instrutor autor do evento**: mesma visibilidade que admin
@@ -332,6 +344,8 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 ### ❓ Ajuda (`/dashboard/help`)
 - FAQ completo em PT-BR e inglês
 - Seções expansíveis sobre cada funcionalidade
+- **Novas seções de fluxo**: Ordem Recomendada de Configuração, Fluxos Alternativos (com/sem liga, com/sem grupos, sem turma), Cadastro em Massa via CSV
+- Seção de Desafios atualizada com requisito de conclusão, bloqueio e liberação manual
 - Explicação de roles, XP, Shells, ranking, badges
 - Botões expandir/recolher tudo
 
@@ -498,6 +512,12 @@ npm start
 - [x] Painel de membros expansível no chat (nome, e-mail, data de ingresso)
 - [x] Contagem de participantes exibida nos cards de equipes
 - [x] Scoreboard com coluna "Última Flag" (data/hora da captura) e critérios de ranking visíveis
+- [x] Requisito de conclusão em desafios (toggle + select de desafio pré-requisito no modal de cadastro)
+- [x] Bloqueio automático por requisito: card exibe apenas título e contagem de dicas enquanto o pré-requisito não é resolvido (individual ou equipe)
+- [x] Liberação manual por card: toggle para admin/instrutor abrir acesso a qualquer momento
+- [x] Novas colunas no banco: `challenges.requires_completion`, `challenges.required_challenge_id`, `challenges.manual_unlock_enabled`
+- [x] Central de Ajuda com novas seções: Ordem de Configuração, Fluxos Alternativos, Cadastro em Massa (CSV)
+- [x] Guia Rápido expandido: seções expansíveis por fluxo para instrutor e aluno, bilíngue (pt-BR/en)
 - [x] Filtro de liga no scoreboard corrigido (event_codes + league_code)
 - [x] Scoreboard individual e por equipes
 - [x] Sistema de badges com 4 raridades

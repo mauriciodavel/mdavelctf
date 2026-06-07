@@ -1,8 +1,8 @@
 # Documento de Requisitos — mdavelCTF
 
 **Projeto:** mdavelCTF — Plataforma Gamificada de Competições Capture the Flag  
-**Versão:** 1.0  
-**Data:** Junho 2025  
+**Versão:** 1.1  
+**Data:** Junho 2026  
 **Stack Tecnológica:** Next.js 14 (App Router) · React 18 · TypeScript 5.7 · Tailwind CSS 3.4 · Supabase (PostgreSQL + Auth + Realtime)
 
 ---
@@ -54,9 +54,9 @@
 | RF-020 | O dashboard do **administrador** deve exibir: Total de Eventos, Ao Vivo Agora, Usuários, Submissões, Resoluções, Taxa de Resolução, Dicas Desbloqueadas, Análise de Temporadas (total de ligas e eventos em ligas). | Alta |
 | RF-021 | O dashboard do administrador deve exibir um feed de atividades recentes com as últimas 10 submissões (nome do usuário, desafio, status correto/incorreto, horário). | Média |
 | RF-022 | O dashboard do **instrutor** deve exibir: Total de Turmas, Total de Alunos e Meus Eventos. | Alta |
-| RF-023 | O dashboard do instrutor deve exibir um guia rápido com 3 passos: Criar Turma, Criar Evento, Acompanhar. | Baixa |
+| RF-023 | O dashboard do instrutor deve exibir um Guia Rápido com seções expansíveis cobrindo: fluxo principal de configuração (ordem recomendada), com/sem liga, com/sem grupos de turma, cadastro em massa via CSV e desafios com/sem requisito de conclusão. | Baixa |
 | RF-024 | O dashboard do **competidor** deve exibir: XP Total, Level, Shells 🐚 e Pontos para o Próximo Nível. | Alta |
-| RF-025 | O dashboard do competidor deve exibir um guia rápido com 4 dicas: Ingressar em Turma, Resolver Desafios, Criar Equipe, Conquiste Badges. | Baixa |
+| RF-025 | O dashboard do competidor deve exibir um Guia Rápido com seções expansíveis cobrindo: início correto (turma → evento → missão), individual vs equipe, desafios bloqueados por requisito e uso estratégico de dicas. | Baixa |
 | RF-026 | O dashboard do competidor deve exibir o feed de atividades filtrado para as suas próprias submissões. | Média |
 
 ### 1.4 Eventos
@@ -97,6 +97,11 @@
 | RF-048 | O competidor deve poder reagir (like/dislike) a cada desafio. | Baixa |
 | RF-049 | O campo "O que aprendi" deve ser visível **somente** para o gestor/criador do evento ou após o competidor resolver o desafio. | Alta |
 | RF-050 | O campo "Onde aprender mais" deve seguir a mesma regra de visibilidade de RF-049. | Alta |
+| RF-122 | O gestor deve poder ativar um "Requisito de conclusão" ao cadastrar ou editar um desafio, selecionando um desafio anterior da mesma missão como pré-condição de acesso. | Alta |
+| RF-123 | Quando um desafio possui requisito de conclusão e o pré-requisito não foi resolvido (pelo competidor individualmente ou por qualquer membro da equipe), o desafio deve ficar bloqueado para o competidor: exibindo apenas título e contagem de dicas, sem descrição, dicas, campo de resposta ou reações. | Alta |
+| RF-124 | Quando o pré-requisito do desafio for resolvido (pelo competidor ou por membro da equipe/grupo), o desafio deve ser desbloqueado automaticamente sem necessidade de ação do gestor. | Alta |
+| RF-125 | Em cada card de desafio, admin e o instrutor criador do evento devem visualizar um toggle de "Liberação manual" que, quando ativado, concede acesso irrestrito dos competidores ao desafio independentemente do estado do pré-requisito. | Alta |
+| RF-126 | A ativação/desativação da Liberação manual deve persistir no banco de dados em tempo real e refletir imediatamente para todos os competidores. | Alta |
 
 ### 1.7 Dicas (Hints)
 
@@ -203,6 +208,9 @@
 | ID | Requisito | Prioridade |
 |----|-----------|------------|
 | RF-111 | O sistema deve fornecer uma página de ajuda com seções expansíveis cobrindo: O que é a mdavelCTF, Perfis de Usuário (4 roles), Ligas, Eventos, Missões, Desafios, Dicas, Equipes, Shells, XP/Níveis, Ranking, Turmas, Badges e Segurança/Sessão. | Média |
+| RF-119 | A Central de Ajuda deve conter seção "Ordem Recomendada de Configuração" descrevendo a sequência: Turma → Grupos (opcional) → Liga (opcional) → Evento → Missões → Desafios → Dicas. | Média |
+| RF-120 | A Central de Ajuda deve conter seção "Fluxos Alternativos" descrevendo os cenários: com/sem liga, com/sem grupos de turma e sem turma (evento público). | Média |
+| RF-121 | A Central de Ajuda deve conter seção "Cadastro em Massa (CSV) e Grupos" descrevendo o fluxo de importação e revisão de vínculos. | Média |
 
 ### 1.16 Internacionalização (i18n)
 
@@ -344,6 +352,9 @@
 | RN-024 | **Dicas — Competidor** vê dicas como "Bloqueada" por padrão, podendo desbloquear pagando shells. | Alta |
 | RN-025 | **"O que aprendi" e "Onde aprender mais"** — Gestor privilegiado sempre vê esses campos. Competidores só veem após resolver o desafio. | Alta |
 | RN-026 | Eventos **privados** seguem regras de acesso baseadas em turma vinculada (via `class_id`). Eventos **públicos** são visíveis a todos. | Média |
+| RN-036 | **Desafio com requisito de conclusão e sem liberação manual** — O competidor vê apenas título e contagem de dicas enquanto o pré-requisito (`required_challenge_id`) não for resolvido por ele ou por qualquer membro de sua equipe. Descrição, dicas, campo de resposta e reações ficam ocultos. | Alta |
+| RN-037 | **Desafio com liberação manual ativa** (`manual_unlock_enabled = true`) — O gestor deliberadamente libera acesso total ao desafio para todos os competidores, ignorando o estado do pré-requisito. | Alta |
+| RN-038 | **Gestor privilegiado** vê sempre o conteúdo completo do desafio independentemente de requisito ou liberação manual, e visualiza ambos os toggles (Requisito de conclusão no modal; Liberação manual no card). | Alta |
 
 ### 3.6 Turmas e Membros
 
@@ -384,10 +395,10 @@
 | RF-009, RF-010, RF-011, RF-013 | `src/lib/auth.tsx` (IDLE_TIMEOUT, activity tracking, visibility change) |
 | RF-014, RF-015 | `supabase/schema.sql` (tabela `profiles`), `src/lib/auth.tsx` (Profile interface) |
 | RF-016, RF-017, RF-018, RF-019 | `src/app/dashboard/profile/page.tsx` |
-| RF-020, RF-021, RF-022, RF-023, RF-024, RF-025, RF-026 | `src/app/dashboard/page.tsx` |
+| RF-020, RF-021, RF-022, RF-023, RF-024, RF-025, RF-026 | `src/app/dashboard/page.tsx` (guia rápido com seções expansíveis bilíngues para instrutor e competidor) |
 | RF-027, RF-028, RF-029, RF-030, RF-031, RF-032, RF-033, RF-034 | `src/app/dashboard/events/page.tsx`, `supabase/schema.sql` (tabela `events`) |
 | RF-035, RF-036, RF-037, RF-038, RF-039 | `src/app/dashboard/events/[id]/page.tsx`, `supabase/schema.sql` (tabela `missions`) |
-| RF-040, RF-041, RF-042, RF-043, RF-044, RF-045, RF-046, RF-047, RF-048, RF-049, RF-050 | `src/app/dashboard/events/[id]/page.tsx`, `supabase/schema.sql` (tabela `challenges`) |
+| RF-040, RF-041, RF-042, RF-043, RF-044, RF-045, RF-046, RF-047, RF-048, RF-049, RF-050, RF-122, RF-123, RF-124, RF-125, RF-126 | `src/app/dashboard/events/[id]/page.tsx`, `supabase/schema.sql` (tabela `challenges`, colunas `requires_completion`, `required_challenge_id`, `manual_unlock_enabled`) |
 | RF-051, RF-052, RF-053, RF-054, RF-055, RF-056, RF-057, RF-058 | `src/app/dashboard/events/[id]/page.tsx`, `supabase/schema.sql` (tabelas `hints`, `hint_usage`) |
 | RF-059, RF-060, RF-061, RF-062, RF-063, RF-064, RF-065, RF-066, RF-067, RF-068, RF-069 | `src/app/dashboard/leagues/page.tsx`, `supabase/schema.sql` (tabelas `leagues`, `league_events`) |
 | RF-070, RF-071, RF-072, RF-073, RF-074, RF-075, RF-076, RF-077, RF-078, RF-079, RF-080 | `src/app/dashboard/classes/page.tsx`, `supabase/schema.sql` (tabelas `classes`, `class_members`) |
@@ -396,7 +407,7 @@
 | RF-095, RF-096, RF-097, RF-098, RF-099 | `src/app/dashboard/scoreboard/page.tsx` |
 | RF-100, RF-101, RF-102, RF-103, RF-104 | `src/app/dashboard/badges/page.tsx`, `src/components/BadgeDisplay.tsx`, `supabase/schema.sql` (tabelas `badges`, `user_badges`) |
 | RF-105, RF-106, RF-107, RF-108, RF-109, RF-110 | `src/app/dashboard/admin/page.tsx` |
-| RF-111 | `src/app/dashboard/help/page.tsx` |
+| RF-111, RF-119, RF-120, RF-121 | `src/app/dashboard/help/page.tsx` |
 | RF-112, RF-113, RF-114 | `src/lib/i18n.tsx` |
 | RF-115, RF-116, RF-117, RF-118 | `supabase/schema.sql` (tabela `submissions`, triggers `handle_correct_submission`, funções `calculate_level`, `xp_for_next_level`) |
 
@@ -439,6 +450,7 @@
 | RN-017, RN-018 | `src/app/dashboard/badges/page.tsx`, `supabase/schema.sql` (tabela `badges` com raridades) |
 | RN-019, RN-020, RN-021 | `src/app/dashboard/events/[id]/page.tsx` (lógica de submissão e limite de tentativas) |
 | RN-023, RN-024, RN-025 | `src/app/dashboard/events/[id]/page.tsx` (variável `isPrivilegedViewer`, lógica de visibilidade condicional) |
+| RN-036, RN-037, RN-038 | `src/app/dashboard/events/[id]/page.tsx` (variáveis `prerequisiteLocked`, `minimalLockedView`, `handleToggleManualUnlock`; colunas `requires_completion`, `required_challenge_id`, `manual_unlock_enabled` na tabela `challenges`) |
 | RN-026 | `supabase/schema.sql` (campo `visibility` na tabela `events`), `src/app/dashboard/events/page.tsx` |
 | RN-027, RN-028, RN-029 | `src/app/dashboard/classes/page.tsx`, `supabase/schema.sql` (tabela `class_members` com check constraint de status) |
 | RN-030, RN-031, RN-032 | `src/app/dashboard/teams/page.tsx`, `src/components/MiniChat.tsx`, `supabase/schema.sql` (RLS `chat_messages`) |
@@ -455,7 +467,7 @@
 | `class_members` | RF-072, RF-073, RF-074, RF-075 | RN-028, RN-029 |
 | `events` | RF-027, RF-028, RF-029, RF-030, RF-031 | RN-005, RN-006, RN-026 |
 | `missions` | RF-035, RF-036, RF-037, RF-038 | RN-007, RN-008 |
-| `challenges` | RF-040, RF-041, RF-042, RF-043, RF-044, RF-049, RF-050 | RN-007, RN-008, RN-025 |
+| `challenges` | RF-040, RF-041, RF-042, RF-043, RF-044, RF-049, RF-050, RF-122, RF-123, RF-124, RF-125, RF-126 | RN-007, RN-008, RN-025, RN-036, RN-037, RN-038 |
 | `hints` | RF-051, RF-052, RF-053, RF-054, RF-055, RF-057 | RN-007, RN-015, RN-023, RN-024 |
 | `hint_usage` | RF-056, RF-058 | RN-016 |
 | `teams` | RF-081, RF-082 | RN-011, RN-030 |

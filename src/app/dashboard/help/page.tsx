@@ -18,6 +18,62 @@ interface Section {
 
 const sections: Section[] = [
   {
+    key: 'flow_order',
+    icon: <Target className="text-cyber-cyan" size={20} />,
+    titlePt: 'Ordem Recomendada de Configuração',
+    titleEn: 'Recommended Setup Order',
+    contentPt: [
+      'Para evitar bloqueios de acesso e inconsistências, siga esta ordem: 1) Turma, 2) (Opcional) Grupos da turma, 3) Liga (opcional), 4) Evento, 5) Missões, 6) Desafios, 7) Dicas e validações finais.',
+      'Se o evento for restrito, vincule a turma ao evento antes do início da competição.',
+      'Se o evento usar equipes, organize os grupos/times antes da abertura para que os competidores entrem prontos para competir.',
+      'Dica prática: publique o evento apenas após conferir datas, missões, flags, tentativas máximas e requisitos de conclusão.',
+    ],
+    contentEn: [
+      'To avoid access issues and inconsistencies, follow this order: 1) Class, 2) (Optional) Class groups, 3) League (optional), 4) Event, 5) Missions, 6) Challenges, 7) Hints and final validations.',
+      'If the event is restricted, link the class to the event before the competition starts.',
+      'If the event uses teams, organize groups/teams before opening so competitors are ready to compete.',
+      'Practical tip: publish the event only after checking dates, missions, flags, max attempts and completion requirements.',
+    ],
+  },
+  {
+    key: 'alternative_flows',
+    icon: <Layers className="text-cyber-purple" size={20} />,
+    titlePt: 'Fluxos Alternativos',
+    titleEn: 'Alternative Flows',
+    contentPt: [
+      'Desafios com liga: crie a liga, vincule o evento na liga e acompanhe ranking/temporada por liga.',
+      'Desafios sem liga: crie evento isolado e acompanhe o placar por evento.',
+      'Turma com grupos: use grupos para organização pedagógica e distribuição de competidores por equipe/perfil.',
+      'Turma sem grupos: use apenas a turma com entrada por código, sem divisão interna.',
+      'Sem turma: mantenha evento público para participação aberta (quando apropriado ao cenário).',
+    ],
+    contentEn: [
+      'Challenges with league: create the league, link the event to the league, and track season/ranking by league.',
+      'Challenges without league: create a standalone event and track the scoreboard by event.',
+      'Class with groups: use groups for pedagogical organization and competitor distribution by team/profile.',
+      'Class without groups: use only the class with join code, without internal split.',
+      'Without class: keep event public for open participation (when appropriate for the scenario).',
+    ],
+  },
+  {
+    key: 'bulk_enrollment',
+    icon: <Users className="text-cyber-green" size={20} />,
+    titlePt: 'Cadastro em Massa (CSV) e Grupos',
+    titleEn: 'Bulk Enrollment (CSV) and Groups',
+    contentPt: [
+      'No cadastro de turmas, o instrutor pode criar grupos e importar competidores em massa com CSV.',
+      'O fluxo recomendado é: criar turma -> criar grupos (se necessário) -> importar CSV -> revisar participantes/grupos -> liberar evento.',
+      'Após importação, valide se todos os competidores ficaram com status ativo e com vínculo correto de turma/grupo.',
+      'Se houver competição em equipe, ajuste os grupos antes do início para evitar retrabalho durante o evento ao vivo.',
+    ],
+    contentEn: [
+      'When creating classes, instructors can create groups and import competitors in bulk using CSV.',
+      'Recommended flow: create class -> create groups (if needed) -> import CSV -> review participants/groups -> open event.',
+      'After import, validate all competitors have active status and correct class/group links.',
+      'If team competition is enabled, adjust groups before start time to avoid rework during live event.',
+    ],
+  },
+  {
     key: 'what_is',
     icon: <HelpCircle className="text-cyber-cyan" size={20} />,
     titlePt: 'O que é o mdavelCTF?',
@@ -117,6 +173,9 @@ const sections: Section[] = [
       'Para resolver, o competidor submete sua resposta no campo flag{...}. Se a flag estiver correta, recebe os pontos do desafio, uma celebração com confetes e uma mensagem de parabéns na tela.',
       'Desafios podem ter número limitado de tentativas (max_attempts). Se não definido, tentativas são ilimitadas.',
       'Competidores podem reagir com 👍 (gostei) ou 👎 (não gostei) em cada desafio, contribuindo para a taxa de satisfação.',
+      'Requisito de conclusão: ao ativar no cadastro do desafio, selecione um desafio anterior como requisito. Enquanto o requisito não for resolvido (pelo competidor ou por alguém do grupo/equipe), o desafio fica bloqueado.',
+      'Quando bloqueado por requisito, o competidor vê apenas informações mínimas do card (título e quantidade de dicas), sem acesso ao conteúdo e sem envio de flag.',
+      'Instrutor/admin pode usar a Liberação manual no card do desafio para abrir o acesso dos competidores mesmo sem requisito resolvido.',
       '🔒 Quando o evento não estiver ativo (agendado ou encerrado), os desafios ficam bloqueados com cadeado. Competidores não podem ver descrições, dicas ou campo de submissão.',
     ],
     contentEn: [
@@ -124,6 +183,9 @@ const sections: Section[] = [
       'To solve, the competitor submits their answer in the flag{...} field. If the flag is correct, they receive the challenge points, a confetti celebration and a congratulations message on screen.',
       'Challenges can have a limited number of attempts (max_attempts). If not set, attempts are unlimited.',
       'Competitors can react with 👍 (like) or 👎 (dislike) on each challenge, contributing to the satisfaction rate.',
+      'Completion requirement: when enabled during challenge creation, select a previous challenge as prerequisite. Until prerequisite is solved (by competitor or team/group member), the challenge stays locked.',
+      'When prerequisite-locked, competitor sees only minimal card information (title and hint count), without content access and without flag submission.',
+      'Instructor/admin can use Manual unlock on the challenge card to grant access even when prerequisite is not solved.',
       '🔒 When the event is not active (scheduled or finished), challenges are locked. Competitors cannot see descriptions, hints, or the submission field.',
     ],
   },

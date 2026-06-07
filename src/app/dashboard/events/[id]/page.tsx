@@ -50,6 +50,9 @@ export default function EventDetailPage() {
     sequence_number: 1, title: '', description: '', max_attempts: '',
     points: 10, flag: '', difficulty: 'medio',
     what_i_learned: '', learn_more_url: '',
+    requires_completion: false,
+    required_challenge_id: '',
+    manual_unlock_enabled: false,
   });
   const [hintForm, setHintForm] = useState({ content: '', shell_cost: 10, challenge_id: '' });
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -215,6 +218,9 @@ export default function EventDetailPage() {
     if (!challengeForm.title.trim() || !challengeForm.flag.trim()) {
       toast.error('Título e Flag são obrigatórios'); return;
     }
+    if (challengeForm.requires_completion && !challengeForm.required_challenge_id) {
+      toast.error('Selecione um desafio requisito para continuar'); return;
+    }
 
     const payload = {
       mission_id: selectedMission.id,
@@ -227,6 +233,11 @@ export default function EventDetailPage() {
       difficulty: challengeForm.difficulty,
       what_i_learned: challengeForm.what_i_learned || null,
       learn_more_url: challengeForm.learn_more_url || null,
+      requires_completion: challengeForm.requires_completion,
+      required_challenge_id: challengeForm.requires_completion
+        ? challengeForm.required_challenge_id
+        : null,
+      manual_unlock_enabled: challengeForm.manual_unlock_enabled,
     };
 
     if (editingChallenge) {
@@ -242,6 +253,16 @@ export default function EventDetailPage() {
     setChallengeModalOpen(false);
     setEditingChallenge(null);
     loadMissionDetails(selectedMission);
+  };
+
+  const handleToggleManualUnlock = async (challengeId: string, enabled: boolean) => {
+    const { error } = await supabase
+      .from('challenges')
+      .update({ manual_unlock_enabled: enabled, updated_at: new Date().toISOString() })
+      .eq('id', challengeId);
+    if (error) { toast.error(error.message); return; }
+    toast.success(enabled ? 'Acesso liberado manualmente' : 'Liberação manual desativada');
+    if (selectedMission) loadMissionDetails(selectedMission);
   };
 
   const handleDeleteMission = async (missionId: string) => {
@@ -462,6 +483,15 @@ export default function EventDetailPage() {
     easy: 'Fácil', medium: 'Médio', hard: 'Difícil', expert: 'Especialista', insane: 'Insano',
   };
 
+  const hasSolvedChallenge = (challengeId: string) => {
+    const solvedByUser = submissions.some((s) => s.challenge_id === challengeId && s.is_correct);
+    if (solvedByUser) return true;
+    if (userTeam) {
+      return teamSubmissions.some((s) => s.challenge_id === challengeId && s.is_correct);
+    }
+    return false;
+  };
+
   if (loading) return <div className="text-center py-12 text-gray-500">{t('common.loading')}</div>;
   if (!event) return <div className="text-center py-12 text-gray-500">Evento não encontrado</div>;
 
@@ -637,7 +667,20 @@ export default function EventDetailPage() {
                 </button>
                 <button onClick={() => {
                   setEditingChallenge(null);
-                  setChallengeForm({ sequence_number: challenges.length + 1, title: '', description: '', max_attempts: '', points: 10, flag: '', difficulty: 'medio', what_i_learned: '', learn_more_url: '' });
+                  setChallengeForm({
+                    sequence_number: challenges.length + 1,
+                    title: '',
+                    description: '',
+                    max_attempts: '',
+                    points: 10,
+                    flag: '',
+                    difficulty: 'medio',
+                    what_i_learned: '',
+                    learn_more_url: '',
+                    requires_completion: false,
+                    required_challenge_id: '',
+                    manual_unlock_enabled: false,
+                  });
                   setChallengeModalOpen(true);
                 }} className="cyber-btn-primary flex items-center gap-1 text-sm">
                   <Plus size={14} /> {t('challenge.create')}
@@ -657,7 +700,20 @@ export default function EventDetailPage() {
               const totalReactions = reaction.likes + reaction.dislikes;
               const satisfactionPct = totalReactions > 0 ? Math.round((reaction.likes / totalReactions) * 100) : 0;
               const eventActive = isEventActive();
-              const isLocked = !eventActive && !canManage;
+              const prerequisiteChallenge = challenge.required_challenge_id
+                ? challenges.find((c) => c.id === challenge.required_challenge_id)
+                : null;
+              const prerequisiteSatisfied = !challenge.requires_completion
+                || !challenge.required_challenge_id
+                || hasSolvedChallenge(challenge.required_challenge_id);
+              const eventLocked = !eventActive && !canManage;
+              const prerequisiteLocked = !canManage
+                && challenge.requires_completion
+                && !!challenge.required_challenge_id
+                && !challenge.manual_unlock_enabled
+                && !prerequisiteSatisfied;
+              const isLocked = eventLocked || prerequisiteLocked;
+              const minimalLockedView = prerequisiteLocked && !canManage;
 
               return (
                 <div key={challenge.id} className={`cyber-card border-l-4 ${effectivelySolved ? 'border-l-cyber-green' : isLocked ? 'border-l-amber-500/50' : 'border-l-gray-600'}`}>
@@ -667,22 +723,44 @@ export default function EventDetailPage() {
                         {isLocked && !effectivelySolved && <Lock size={16} className="text-amber-400" />}
                         <span className="text-xs text-gray-500 font-mono">#{challenge.sequence_number}</span>
                         <h4 className="font-bold text-white">{challenge.title}</h4>
-                        <span className={`cyber-badge ${effectivelySolved ? 'bg-green-500/20 text-green-400' : isLocked ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                          {effectivelySolved
-                            ? (teamSolved && !solved ? 'Resolvido (Equipe)' : t('challenge.solved'))
-                            : isLocked ? 'Bloqueado' : t('challenge.not_solved')}
-                        </span>
-                        {challenge.difficulty && (
-                          <span className={`cyber-badge ${CHALLENGE_DIFFICULTY_COLORS[challenge.difficulty] || 'bg-gray-500/20 text-gray-400'}`}>
-                            {CHALLENGE_DIFFICULTY_LABELS[challenge.difficulty] || challenge.difficulty}
+                        {!minimalLockedView && (
+                          <>
+                            <span className={`cyber-badge ${effectivelySolved ? 'bg-green-500/20 text-green-400' : isLocked ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                              {effectivelySolved
+                                ? (teamSolved && !solved ? 'Resolvido (Equipe)' : t('challenge.solved'))
+                                : isLocked ? 'Bloqueado' : t('challenge.not_solved')}
+                            </span>
+                            {challenge.difficulty && (
+                              <span className={`cyber-badge ${CHALLENGE_DIFFICULTY_COLORS[challenge.difficulty] || 'bg-gray-500/20 text-gray-400'}`}>
+                                {CHALLENGE_DIFFICULTY_LABELS[challenge.difficulty] || challenge.difficulty}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {minimalLockedView && (
+                          <span className="cyber-badge bg-amber-500/20 text-amber-300">
+                            {challengeHints.length} {challengeHints.length === 1 ? 'dica' : 'dicas'}
                           </span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-cyber-cyan">{challenge.points} pts</span>
+                      {!minimalLockedView && <span className="text-sm font-bold text-cyber-cyan">{challenge.points} pts</span>}
                       {canManage && (
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleManualUnlock(challenge.id, !challenge.manual_unlock_enabled)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${challenge.manual_unlock_enabled ? 'bg-cyber-green/80' : 'bg-gray-600'}`}
+                            title="Liberar acesso manualmente para competidores"
+                            aria-label="Liberar acesso manualmente para competidores"
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${challenge.manual_unlock_enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                          </button>
+                          <span className="text-[11px] text-gray-400">Liberação manual</span>
+                          <div className="flex items-center gap-0.5">
                           <button onClick={() => {
                             setEditingHint(null);
                             setHintForm({ content: '', shell_cost: 10, challenge_id: challenge.id });
@@ -702,6 +780,9 @@ export default function EventDetailPage() {
                               difficulty: challenge.difficulty || 'medio',
                               what_i_learned: challenge.what_i_learned || '',
                               learn_more_url: challenge.learn_more_url || '',
+                                  requires_completion: !!challenge.requires_completion,
+                                  required_challenge_id: challenge.required_challenge_id || '',
+                                  manual_unlock_enabled: !!challenge.manual_unlock_enabled,
                             });
                             setChallengeModalOpen(true);
                           }} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-cyber-cyan">
@@ -711,6 +792,7 @@ export default function EventDetailPage() {
                             className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-red-400">
                             <Trash2 size={14} />
                           </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -720,9 +802,11 @@ export default function EventDetailPage() {
                   {isLocked && !effectivelySolved ? (
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-sm text-amber-400/70 mb-3">
                       <Lock size={14} />
-                      {getEventStatusLabel() === 'agendado'
-                        ? 'Conteúdo disponível quando o evento iniciar.'
-                        : 'Evento encerrado. Conteúdo bloqueado.'}
+                      {prerequisiteLocked
+                        ? `Conteúdo bloqueado até concluir o requisito: ${prerequisiteChallenge ? `#${prerequisiteChallenge.sequence_number} - ${prerequisiteChallenge.title}` : 'desafio anterior'} (${challengeHints.length} ${challengeHints.length === 1 ? 'dica' : 'dicas'}).`
+                        : getEventStatusLabel() === 'agendado'
+                          ? 'Conteúdo disponível quando o evento iniciar.'
+                          : 'Evento encerrado. Conteúdo bloqueado.'}
                     </div>
                   ) : (
                     <>
@@ -796,7 +880,7 @@ export default function EventDetailPage() {
                       )}
 
                       {/* Answer Input */}
-                      {!effectivelySolved && eventActive && (
+                      {!effectivelySolved && eventActive && !isLocked && (
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -816,7 +900,7 @@ export default function EventDetailPage() {
                       )}
 
                       {/* Period blocked message */}
-                      {!effectivelySolved && !eventActive && (
+                      {!effectivelySolved && eventLocked && (
                         <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400">
                           <AlertTriangle size={16} />
                           {getEventStatusLabel() === 'agendado'
@@ -853,7 +937,8 @@ export default function EventDetailPage() {
                   )}
 
                   {/* Reactions */}
-                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-cyber-border">
+                  {!minimalLockedView && (
+                    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-cyber-border">
                     <button onClick={() => handleReaction(challenge.id, 'like')}
                       className={`flex items-center gap-1 text-sm transition-colors ${
                         reaction.userReaction === 'like' ? 'text-green-400' : 'text-gray-500 hover:text-green-400'
@@ -871,7 +956,8 @@ export default function EventDetailPage() {
                         {satisfactionPct}% satisfação
                       </span>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -985,6 +1071,43 @@ export default function EventDetailPage() {
             <input type="url" value={challengeForm.learn_more_url}
               onChange={(e) => setChallengeForm({ ...challengeForm, learn_more_url: e.target.value })}
               className="cyber-input" placeholder="https://exemplo.com/artigo" />
+          </div>
+          <div className="p-3 rounded-lg bg-white/5 border border-cyber-border space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="cyber-label mb-0">Requisito de conclusão</label>
+                <p className="text-xs text-gray-500">Quando ativo, o desafio fica bloqueado até concluir o desafio requisito.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChallengeForm({
+                  ...challengeForm,
+                  requires_completion: !challengeForm.requires_completion,
+                  required_challenge_id: !challengeForm.requires_completion ? challengeForm.required_challenge_id : '',
+                })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${challengeForm.requires_completion ? 'bg-cyber-cyan' : 'bg-gray-600'}`}
+                aria-label="Alternar requisito de conclusão"
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${challengeForm.requires_completion ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div>
+              <label className="cyber-label">Desafio requisito</label>
+              <select
+                value={challengeForm.required_challenge_id}
+                onChange={(e) => setChallengeForm({ ...challengeForm, required_challenge_id: e.target.value })}
+                disabled={!challengeForm.requires_completion}
+                className="cyber-select disabled:opacity-50"
+              >
+                <option value="">Selecione um desafio anterior</option>
+                {challenges
+                  .filter((c) => !editingChallenge || c.id !== editingChallenge.id)
+                  .sort((a, b) => a.sequence_number - b.sequence_number)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>#{c.sequence_number} - {c.title}</option>
+                  ))}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setChallengeModalOpen(false)} className="cyber-btn-secondary">{t('common.cancel')}</button>
