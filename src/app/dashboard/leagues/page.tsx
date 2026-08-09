@@ -115,7 +115,7 @@ function formatRemaining(endDate: string | null): string {
 
 function formatDateTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
+    timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
 }
@@ -386,7 +386,7 @@ export default function LeaguesPage() {
             <span className={`cyber-badge ${status.color}`}>{status.label}</span>
           </div>
           {selectedEvent.description && (
-            <p className="text-gray-400 text-sm mb-4">{selectedEvent.description}</p>
+            <p className="text-gray-400 text-sm mb-4 whitespace-pre-line">{selectedEvent.description}</p>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div className="p-3 rounded-lg bg-white/5 text-center">
@@ -433,7 +433,7 @@ export default function LeaguesPage() {
                     <div>
                       <h3 className="font-bold text-white">{mission.name}</h3>
                       {mission.description && (
-                        <p className="text-xs text-gray-500 mt-0.5">{mission.description}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{mission.description}</p>
                       )}
                     </div>
                   </div>

@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
   try {
     const { users }: { users: BulkUser[] } = await request.json();
 
-    if (!Array.isArray(users) || users.length === 0) {
+    // Bound the work an authenticated operator can make the service-role key do.
+    if (!Array.isArray(users) || users.length === 0 || users.length > 100) {
       return NextResponse.json({ error: 'Lista de usuários é obrigatória' }, { status: 400 });
     }
 
@@ -41,6 +42,11 @@ export async function POST(request: NextRequest) {
     for (const u of users) {
       if (!u.email || !u.display_name || !u.password) {
         results.push({ email: u.email || '?', success: false, error: 'Campos obrigatórios ausentes' });
+        continue;
+      }
+
+      if (u.password.length < 8 || u.password.length > 128) {
+        results.push({ email: u.email, success: false, error: 'A senha deve ter entre 8 e 128 caracteres' });
         continue;
       }
 

@@ -3,7 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase-server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, displayName, role } = await request.json();
+    const { email, password, displayName } = await request.json();
 
     if (!email || !password || !displayName) {
       return NextResponse.json({ error: 'email, password e displayName são obrigatórios' }, { status: 400 });
@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
       email_confirm: true,
       user_metadata: {
         display_name: displayName.trim(),
-        role: role || 'competitor',
+        // Public registration must never accept authorization data from the client.
+        role: 'competitor',
       },
     });
 

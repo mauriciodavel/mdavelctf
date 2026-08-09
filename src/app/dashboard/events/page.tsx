@@ -282,8 +282,9 @@ export default function EventsPage() {
 
   const formatDateTime = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const options = { timeZone: 'UTC' } as const;
+    return d.toLocaleDateString('pt-BR', { ...options, day: '2-digit', month: '2-digit', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('pt-BR', { ...options, hour: '2-digit', minute: '2-digit' });
   };
 
   const filtered = events.filter(e =>
@@ -352,7 +353,7 @@ export default function EventsPage() {
                   )}
                 </div>
 
-                <p className="text-sm text-gray-400 line-clamp-2 mb-3">{event.description}</p>
+                <p className="text-sm text-gray-400 line-clamp-2 mb-3 whitespace-pre-line">{event.description}</p>
 
                 {/* Stats row */}
                 {stats && (

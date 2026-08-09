@@ -449,6 +449,15 @@ export default function AdminPage() {
   const [csvLoading, setCsvLoading] = useState(false);
   const [csvLog, setCsvLog] = useState<string[]>([]);
 
+  // Individual user registration state
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ email: '', display_name: '', password: '' });
+  const [userClasses, setUserClasses] = useState<any[]>([]);
+  const [userGroups, setUserGroups] = useState<any[]>([]);
+  const [userClassId, setUserClassId] = useState('');
+  const [userGroupId, setUserGroupId] = useState('');
+  const [userLoading, setUserLoading] = useState(false);
+
   // Delete confirmation state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
@@ -537,6 +546,46 @@ export default function AdminPage() {
     setCsvGroupId('');
     setCsvLog([]);
     setCsvModalOpen(true);
+  };
+
+  const openUserModal = async () => {
+    const { data } = await supabase.from('classes').select('id, name').order('name');
+    setUserClasses(data || []);
+    setUserGroups([]);
+    setUserClassId('');
+    setUserGroupId('');
+    setNewUser({ email: '', display_name: '', password: '' });
+    setUserModalOpen(true);
+  };
+
+  const handleUserClassChange = async (classId: string) => {
+    setUserClassId(classId);
+    setUserGroupId('');
+    if (!classId) { setUserGroups([]); return; }
+    const { data } = await supabase.from('class_groups').select('id, name').eq('class_id', classId).order('name');
+    setUserGroups(data || []);
+  };
+
+  const handleCreateUser = async () => {
+    const email = newUser.email.trim().toLowerCase();
+    const display_name = newUser.display_name.trim();
+    if (!email || !display_name || !newUser.password) { toast.error('Preencha nome, e-mail e senha'); return; }
+    if (newUser.password.length < 8) { toast.error('A senha deve ter pelo menos 8 caracteres'); return; }
+    setUserLoading(true);
+    try {
+      const res = await fetch('/api/auth/bulk-register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: [{ email, display_name, password: newUser.password, class_id: userClassId || undefined, group_id: userGroupId || undefined }] }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || 'Falha ao cadastrar usuário'); return; }
+      const result = json.results?.[0];
+      if (!result?.success) { toast.error(result?.error || 'Falha ao cadastrar usuário'); return; }
+      toast.success('Usuário cadastrado com sucesso');
+      setUserModalOpen(false);
+      loadUsers();
+    } catch { toast.error('Erro de conexão'); }
+    finally { setUserLoading(false); }
   };
 
   const handleCsvClassChange = async (classId: string) => {
@@ -741,6 +790,10 @@ export default function AdminPage() {
           <button onClick={openCsvImport}
             className="cyber-btn-secondary flex items-center gap-2 text-sm whitespace-nowrap">
             <Upload size={15} /> Importar CSV
+          </button>
+          <button onClick={openUserModal}
+            className="cyber-btn-secondary flex items-center gap-2 text-sm whitespace-nowrap">
+            <UserPlus size={15} /> Novo usuário
           </button>
         </div>
       </div>
@@ -1052,6 +1105,51 @@ export default function AdminPage() {
       </Modal>
 
       {/* CSV Import Modal */}
+      <Modal isOpen={userModalOpen} onClose={() => !userLoading && setUserModalOpen(false)} title="Cadastrar novo usuário" size="lg">
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="cyber-label">Nome de exibição</label>
+              <input className="cyber-input" value={newUser.display_name} onChange={e => setNewUser({ ...newUser, display_name: e.target.value })} placeholder="Nome completo" />
+            </div>
+            <div>
+              <label className="cyber-label">E-mail</label>
+              <input type="email" className="cyber-input" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} placeholder="usuario@exemplo.com" />
+            </div>
+          </div>
+          <div>
+            <label className="cyber-label">Senha inicial</label>
+            <input type="password" className="cyber-input" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} minLength={8} placeholder="Mínimo de 8 caracteres" />
+          </div>
+          <div className="border-t border-cyber-border pt-4">
+            <p className="text-sm font-semibold text-white mb-3">Vínculo opcional</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="cyber-label">Turma</label>
+                <select value={userClassId} onChange={e => handleUserClassChange(e.target.value)} className="cyber-select">
+                  <option value="">Nenhuma</option>
+                  {userClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="cyber-label">Grupo da turma</label>
+                <select value={userGroupId} onChange={e => setUserGroupId(e.target.value)} className="cyber-select" disabled={!userClassId}>
+                  <option value="">Nenhum</option>
+                  {userGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setUserModalOpen(false)} disabled={userLoading} className="cyber-btn-secondary">Cancelar</button>
+            <button onClick={handleCreateUser} disabled={userLoading} className="cyber-btn-primary flex items-center gap-2">
+              {userLoading ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+              {userLoading ? 'Cadastrando...' : 'Cadastrar usuário'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal isOpen={csvModalOpen} onClose={() => setCsvModalOpen(false)} title="Importar Usuários via CSV" size="lg">
         <div className="space-y-4">
           <div className="p-3 rounded-lg bg-cyber-cyan/5 border border-cyber-cyan/20 text-xs text-gray-400">

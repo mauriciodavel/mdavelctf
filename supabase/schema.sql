@@ -676,7 +676,7 @@ BEGIN
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1)),
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'role', 'competitor')
+    'competitor'
   );
   RETURN NEW;
 END;

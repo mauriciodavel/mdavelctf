@@ -505,7 +505,7 @@ export default function EventDetailPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{event.name}</h1>
-          <p className="text-sm text-gray-500">{event.description}</p>
+          <p className="text-sm text-gray-500 whitespace-pre-line">{event.description}</p>
         </div>
       </div>
 
@@ -572,7 +572,7 @@ export default function EventDetailPage() {
                         )}
                       </div>
                       <h3 className="text-lg font-bold">{mission.name}</h3>
-                      <p className="text-sm text-gray-400 line-clamp-2 mt-1">{mission.description}</p>
+                      <p className="text-sm text-gray-400 line-clamp-2 mt-1 whitespace-pre-line">{mission.description}</p>
                       {mission.author && <p className="text-xs text-gray-500 mt-2">Autor: {mission.author}</p>}
                     </div>
                     <div className="flex items-center gap-1">
@@ -630,7 +630,7 @@ export default function EventDetailPage() {
                   </span>
                 </div>
                 <h2 className="text-xl font-bold">{selectedMission.name}</h2>
-                <p className="text-sm text-gray-400 mt-1">{selectedMission.description}</p>
+                <p className="text-sm text-gray-400 mt-1 whitespace-pre-line">{selectedMission.description}</p>
                 {selectedMission.conclusions && (
                   <div className="mt-3 p-3 rounded-lg bg-white/5 border border-cyber-border">
                     <h4 className="text-xs font-semibold text-cyber-cyan mb-1">{t('mission.conclusions')}</h4>
