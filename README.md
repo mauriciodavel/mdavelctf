@@ -546,3 +546,5 @@ npm start
 ---
 
 > **Este README serve como referência central do projeto.** Atualize-o conforme novas funcionalidades forem implementadas para manter o registro de progresso.
+- Primeiro Sangue: o primeiro envio correto de cada desafio é identificado pela ordenação de `submissions.submitted_at`, exibido no card e anunciado via Supabase Realtime. Habilite Realtime para `submissions` no projeto Supabase. Teste submissões incorretas, recarregamento e concorrência.
+- Anúncios durante o evento: organizadores publicam mensagens em `event_announcements`; competidores recebem popup via Supabase Realtime. Aplicar a migration `20260809090000_event_announcements.sql` e habilitar Realtime para essa tabela.

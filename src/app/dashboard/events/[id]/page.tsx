@@ -30,6 +30,11 @@ export default function EventDetailPage() {
   const [hints, setHints] = useState<any[]>([]);
   const [hintUsage, setHintUsage] = useState<Set<string>>(new Set());
   const [submissions, setSubmissions] = useState<any[]>([]);
+  const [firstBloods, setFirstBloods] = useState<Record<string, any>>({});
+  const [firstBloodNotice, setFirstBloodNotice] = useState<{ challengeTitle: string; solverName: string; capturedAt: string } | null>(null);
+  const [announcement, setAnnouncement] = useState<any>(null);
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementSending, setAnnouncementSending] = useState(false);
   const [reactions, setReactions] = useState<Record<string, { likes: number; dislikes: number; userReaction?: string }>>({});
   const [loading, setLoading] = useState(true);
 
@@ -147,6 +152,15 @@ export default function EventDetailPage() {
         .in('challenge_id', challengeIds).eq('user_id', profile.id);
       setSubmissions(subs || []);
 
+      const { data: correctSubs } = await supabase.from('submissions')
+        .select('challenge_id, user_id, submitted_at, profiles(display_name)')
+        .in('challenge_id', challengeIds).eq('is_correct', true).order('submitted_at', { ascending: true });
+      const bloods: Record<string, any> = {};
+      (correctSubs || []).forEach((submission: any) => {
+        if (!bloods[submission.challenge_id]) bloods[submission.challenge_id] = submission;
+      });
+      setFirstBloods(bloods);
+
       // Load team submissions (to check if anyone in the team already solved it)
       if (userTeam) {
         const { data: teamMembers } = await supabase
@@ -178,6 +192,54 @@ export default function EventDetailPage() {
     } catch (err) {
       console.error('loadMissionDetails exception:', err);
     }
+  };
+
+  // Announce the first correct submission live to everyone viewing this event.
+  useEffect(() => {
+    if (!challenges.length) return;
+    const challengeIds = new Set(challenges.map(c => c.id));
+    const channel = supabase.channel(`event-first-blood-${eventId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submissions' }, async (payload) => {
+        const submission: any = payload.new;
+        if (!challengeIds.has(submission.challenge_id) || !submission.is_correct) return;
+        const { data: earliest } = await supabase.from('submissions')
+          .select('challenge_id, user_id, submitted_at, profiles(display_name)')
+          .eq('challenge_id', submission.challenge_id).eq('is_correct', true)
+          .order('submitted_at', { ascending: true }).limit(1).maybeSingle();
+        if (!earliest) return;
+        setFirstBloods(current => {
+          if (current[submission.challenge_id]) return current;
+          const challenge = challenges.find(c => c.id === submission.challenge_id);
+          setFirstBloodNotice({
+            challengeTitle: challenge?.title || 'Desafio',
+            solverName: earliest.profiles?.display_name || 'um competidor',
+            capturedAt: earliest.submitted_at,
+          });
+          toast.success(`Primeiro Sangue: ${challenge?.title || 'desafio'}!`, { duration: 6000 });
+          return { ...current, [submission.challenge_id]: earliest };
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [challenges, eventId, supabase]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const channel = supabase.channel(`event-announcements-${eventId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'event_announcements', filter: `event_id=eq.${eventId}` }, (payload) => {
+        setAnnouncement(payload.new);
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [eventId, supabase]);
+
+  const publishAnnouncement = async () => {
+    const message = announcementText.trim();
+    if (!message || !profile?.id) return;
+    setAnnouncementSending(true);
+    const { error } = await supabase.from('event_announcements').insert({ event_id: eventId, created_by: profile.id, message });
+    if (error) toast.error(error.message);
+    else { setAnnouncementText(''); toast.success('Anúncio enviado'); }
+    setAnnouncementSending(false);
   };
 
   const handleSaveMission = async () => {
@@ -506,6 +568,15 @@ export default function EventDetailPage() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{event.name}</h1>
           <p className="text-sm text-gray-500 whitespace-pre-line">{event.description}</p>
+          {canManage && (
+            <div className="mt-4 flex gap-2 max-w-3xl">
+              <input value={announcementText} maxLength={1000} onChange={e => setAnnouncementText(e.target.value)}
+                className="cyber-input flex-1" placeholder="Enviar anúncio aos competidores..." />
+              <button onClick={publishAnnouncement} disabled={announcementSending || !announcementText.trim()} className="cyber-btn-primary whitespace-nowrap">
+                {announcementSending ? 'Enviando...' : 'Anunciar'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -723,6 +794,11 @@ export default function EventDetailPage() {
                         {isLocked && !effectivelySolved && <Lock size={16} className="text-amber-400" />}
                         <span className="text-xs text-gray-500 font-mono">#{challenge.sequence_number}</span>
                         <h4 className="font-bold text-white">{challenge.title}</h4>
+                        {firstBloods[challenge.id] && (
+                          <span className="cyber-badge bg-amber-500/20 text-amber-300 border border-amber-400/30" title="Primeiro usuário a resolver este desafio">
+                            🩸 Primeiro Sangue{firstBloods[challenge.id].profiles?.display_name ? ` · ${firstBloods[challenge.id].profiles.display_name}` : ''}
+                          </span>
+                        )}
                         {!minimalLockedView && (
                           <>
                             <span className={`cyber-badge ${effectivelySolved ? 'bg-green-500/20 text-green-400' : isLocked ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>
@@ -1144,6 +1220,36 @@ export default function EventDetailPage() {
             <button onClick={handleSaveHint} className="cyber-btn-primary">{t('common.save')}</button>
           </div>
         </div>
+      </Modal>
+
+      <Modal isOpen={!!firstBloodNotice} onClose={() => setFirstBloodNotice(null)} title="🩸 Primeiro Sangue">
+        {firstBloodNotice && (
+          <div className="space-y-5 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-500/15 border border-red-400/40 text-3xl">🩸</div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Flag capturada primeiro!</h3>
+              <p className="mt-2 text-gray-300">
+                <span className="text-cyber-cyan font-semibold">{firstBloodNotice.solverName}</span> foi o primeiro a resolver <span className="text-white font-semibold">{firstBloodNotice.challengeTitle}</span>.
+              </p>
+              <p className="mt-2 text-sm text-gray-500">
+                {new Date(firstBloodNotice.capturedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' })} UTC
+              </p>
+            </div>
+            <button onClick={() => setFirstBloodNotice(null)} className="cyber-btn-primary">Fechar</button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal isOpen={!!announcement} onClose={() => setAnnouncement(null)} title="📢 Anúncio do organizador">
+        {announcement && (
+          <div className="space-y-5">
+            <p className="text-lg text-white whitespace-pre-line">{announcement.message}</p>
+            <p className="text-xs text-gray-500 text-right">
+              {new Date(announcement.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })} (horário de São Paulo)
+            </p>
+            <div className="flex justify-end"><button onClick={() => setAnnouncement(null)} className="cyber-btn-primary">Fechar</button></div>
+          </div>
+        )}
       </Modal>
 
       {/* Congratulations Modal */}

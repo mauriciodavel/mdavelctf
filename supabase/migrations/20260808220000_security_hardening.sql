@@ -35,6 +35,12 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Correct submissions update XP/shells through a SECURITY DEFINER trigger.
+  -- Nested trigger execution is trusted database work, not a client PATCH.
+  IF pg_trigger_depth() > 1 THEN
+    RETURN NEW;
+  END IF;
+
   SELECT p.role INTO caller_role
   FROM public.profiles p
   WHERE p.id = auth.uid();
