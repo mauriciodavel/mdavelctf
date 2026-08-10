@@ -36,7 +36,7 @@ export default function EventsPage() {
   const supabase = createClient();
   const [events, setEvents] = useState<Event[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
-  const [eventStats, setEventStats] = useState<Record<string, { missions: number; challenges: number; captured: number }>>({});
+  const [eventStats, setEventStats] = useState<Record<string, { missions: number; challenges: number; captured: number; challengeIds: string[]; capturedIds: Set<string> }>>({});
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
@@ -88,7 +88,8 @@ export default function EventsPage() {
 
       // Get all missions for these events
       const { data: allMissions } = await supabase
-        .from('missions').select('id, event_id').in('event_id', eventIds);
+        .from('missions').select('id, event_id, sequence').in('event_id', eventIds)
+        .order('event_id', { ascending: true }).order('sequence', { ascending: true });
 
       const missionIds = (allMissions || []).map(m => m.id);
 
@@ -96,7 +97,8 @@ export default function EventsPage() {
       let allChallenges: any[] = [];
       if (missionIds.length > 0) {
         const { data } = await supabase
-          .from('challenges').select('id, mission_id').in('mission_id', missionIds);
+          .from('challenges').select('id, mission_id, sequence_number').in('mission_id', missionIds)
+          .order('mission_id', { ascending: true }).order('sequence_number', { ascending: true });
         allChallenges = data || [];
       }
 
@@ -110,21 +112,25 @@ export default function EventsPage() {
           .eq('user_id', profile!.id)
           .eq('is_correct', true);
         userCorrectSubs = data || [];
+        const { data: approvedWriteups } = await supabase.from('writeups').select('challenge_id').in('challenge_id', challengeIds).eq('user_id', profile!.id).eq('status', 'approved');
+        userCorrectSubs = [...userCorrectSubs, ...(approvedWriteups || [])];
       }
 
       const capturedSet = new Set(userCorrectSubs.map(s => s.challenge_id));
 
       // Build stats per event
-      const stats: Record<string, { missions: number; challenges: number; captured: number }> = {};
+      const stats: Record<string, { missions: number; challenges: number; captured: number; challengeIds: string[]; capturedIds: Set<string> }> = {};
       for (const ev of events) {
         const evMissions = (allMissions || []).filter(m => m.event_id === ev.id);
         const evMissionIds = new Set(evMissions.map(m => m.id));
-        const evChallenges = allChallenges.filter(c => evMissionIds.has(c.mission_id));
+        const evChallenges = evMissions.flatMap((mission: any) => allChallenges.filter(c => c.mission_id === mission.id));
         const evCaptured = evChallenges.filter(c => capturedSet.has(c.id)).length;
         stats[ev.id] = {
           missions: evMissions.length,
           challenges: evChallenges.length,
           captured: evCaptured,
+          challengeIds: evChallenges.map(c => c.id),
+          capturedIds: new Set(evChallenges.filter(c => capturedSet.has(c.id)).map(c => c.id)),
         };
       }
       setEventStats(stats);
@@ -373,6 +379,29 @@ export default function EventsPage() {
                     }`}>
                       <Flag size={12} /> {stats.captured}/{stats.challenges} Flags
                     </span>
+                  </div>
+                )}
+                {stats && stats.challenges > 0 && (
+                  <div className="mb-4 rounded-lg border border-cyber-border/70 bg-black/20 p-3">
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-gray-400">Progresso total do evento</span>
+                      <span className="font-semibold text-cyber-cyan">{Math.round((stats.captured / stats.challenges) * 100)}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-cyber-purple to-cyber-green transition-all" style={{ width: `${(stats.captured / stats.challenges) * 100}%` }} />
+                    </div>
+                    <div className="mt-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-cyber-purple/50 scrollbar-track-transparent">
+                      <div className="flex items-center gap-1.5 min-w-max">
+                      {stats.challengeIds.map((id, index) => (
+                        <React.Fragment key={id}>
+                          <span title={`Flag ${index + 1}${stats.capturedIds.has(id) ? ' conquistada' : ''}`} className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${stats.capturedIds.has(id) ? 'border-cyber-green bg-cyber-green/20 text-cyber-green' : 'border-gray-700 bg-gray-900 text-gray-500'}`}>
+                            {stats.capturedIds.has(id) ? '⚑' : index + 1}
+                          </span>
+                          {index < stats.challengeIds.length - 1 && <span className={`h-px min-w-2 flex-1 ${stats.capturedIds.has(id) ? 'bg-cyber-green/60' : 'bg-gray-800'}`} />}
+                        </React.Fragment>
+                      ))}
+                      </div>
+                    </div>
                   </div>
                 )}
 

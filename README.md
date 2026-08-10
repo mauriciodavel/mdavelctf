@@ -548,3 +548,33 @@ npm start
 > **Este README serve como referência central do projeto.** Atualize-o conforme novas funcionalidades forem implementadas para manter o registro de progresso.
 - Primeiro Sangue: o primeiro envio correto de cada desafio é identificado pela ordenação de `submissions.submitted_at`, exibido no card e anunciado via Supabase Realtime. Habilite Realtime para `submissions` no projeto Supabase. Teste submissões incorretas, recarregamento e concorrência.
 - Anúncios durante o evento: organizadores publicam mensagens em `event_announcements`; competidores recebem popup via Supabase Realtime. Aplicar a migration `20260809090000_event_announcements.sql` e habilitar Realtime para essa tabela.
+- Writeups pós-evento com revisão, status pendente/aprovado/rejeitado e recompensa de 50% dos pontos.
+- Sino global com detalhes de evento, missão, desafio, data, broadcasts, First Blood e decisões de writeups.
+
+## Estado atual e próximos passos
+
+### Implementado
+
+- RLS/triggers contra escalação de privilégios e cadastro público forçando `competitor`.
+- Validações server-side de submissões, pontuação, tentativas e atividade.
+- Cadastro individual e importação CSV com vínculo opcional a turma/grupo.
+- Quebras de linha preservadas em descrições e datas formatadas corretamente.
+- Progresso visual por missão/evento com barras, contadores, roadmap e rolagem horizontal.
+- First Blood com destaque, popup e Supabase Realtime.
+- Anúncios do organizador durante eventos com popup e Realtime.
+- Writeups pós-evento com revisão, status e 50% dos pontos.
+- Feed administrativo com filtros de writeups e notificações globais.
+- Guias rápidos e Central de Ajuda atualizados em português e inglês.
+
+### Próximos passos
+
+1. Corrigir definitivamente o reenvio de writeups rejeitadas e investigar o erro `406`/`No API key found in request`.
+2. Persistir notificações lidas/não lidas no banco, incluindo broadcasts e First Blood.
+3. Completar escopo de feeds por turma, liga e equipe.
+4. Implementar categorias/tags e filtros de desafios.
+5. Implementar exportação de relatórios CSV/PDF.
+6. Implementar certificados de participação em PDF.
+7. Implementar templates reutilizáveis de eventos.
+8. Adicionar auditoria detalhada do histórico de writeups.
+9. Criar testes automatizados de RLS, RPCs, writeups, notificações e permissões.
+10. Aplicar e validar todas as migrations no Supabase antes do próximo deploy.

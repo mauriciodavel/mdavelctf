@@ -10,6 +10,7 @@ import {
   GraduationCap, BookOpen, Activity, TrendingUp, Eye, CheckCircle2,
   ChevronDown, ChevronRight
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -30,6 +31,8 @@ export default function DashboardPage() {
     leagueEventsCount: 0,
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [pendingWriteups, setPendingWriteups] = useState<any[]>([]);
+  const [writeupFilter, setWriteupFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [loading, setLoading] = useState(true);
   const [expandedInstructorGuide, setExpandedInstructorGuide] = useState<Set<string>>(new Set(['instr_flow_order']));
   const [expandedCompetitorGuide, setExpandedCompetitorGuide] = useState<Set<string>>(new Set(['comp_start_here']));
@@ -92,7 +95,8 @@ export default function DashboardPage() {
 
     // Instructor-specific stats
     let myClasses = 0, myStudents = 0, myEvents = 0;
-    if (profile.role === 'instructor') {
+    const role = String(profile.role || '').trim().toLowerCase();
+    if (role === 'instructor') {
       try {
         const [classRes, eventRes] = await Promise.all([
           supabase.from('classes').select('id', { count: 'exact' }).eq('instructor_id', profile.id),
@@ -134,16 +138,54 @@ export default function DashboardPage() {
         .select('*, profiles(display_name), challenges(title)')
         .order('submitted_at', { ascending: false })
         .limit(10);
-      if (!cancelled) setRecentActivity(recent || []);
+      let activity = recent || [];
+      if (role === 'competitor') {
+        const { data: ownWriteups } = await supabase.from('writeups').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(20);
+        const ids = [...new Set((ownWriteups || []).map((w: any) => w.challenge_id))];
+        const { data: cs } = ids.length ? await supabase.from('challenges').select('id,title,sequence_number,mission_id').in('id', ids) : { data: [] };
+        const { data: ms } = cs?.length ? await supabase.from('missions').select('id,name,event_id').in('id', cs.map((c: any) => c.mission_id)) : { data: [] };
+        const { data: es } = ms?.length ? await supabase.from('events').select('id,name').in('id', ms.map((m: any) => m.event_id)) : { data: [] };
+        const cm = Object.fromEntries((cs || []).map((c: any) => [c.id, c])); const mm = Object.fromEntries((ms || []).map((m: any) => [m.id, m])); const em = Object.fromEntries((es || []).map((e: any) => [e.id, e]));
+        activity = [...(ownWriteups || []).map((w: any) => ({ ...w, challenges: cm[w.challenge_id], missions: mm[cm[w.challenge_id]?.mission_id], events: em[mm[cm[w.challenge_id]?.mission_id]?.event_id], id: `writeup-${w.id}-${w.status}`, is_writeup: true, submitted_at: w.created_at, writeup_status: w.status })), ...activity].slice(0, 20);
+      }
+      if (role === 'instructor' || role === 'admin' || role === 'super_admin') {
+        let writeupQuery = supabase.from('writeups').select('*').order('created_at', { ascending: false }).limit(50);
+        if (role === 'instructor') {
+          const { data: ownEvents } = await supabase.from('events').select('id').eq('created_by', profile.id);
+          const { data: ownMissions } = ownEvents?.length ? await supabase.from('missions').select('id').in('event_id', ownEvents.map((e: any) => e.id)) : { data: [] };
+          const { data: ownChallenges } = ownMissions?.length ? await supabase.from('challenges').select('id').in('mission_id', ownMissions.map((m: any) => m.id)) : { data: [] };
+          writeupQuery = ownChallenges?.length ? writeupQuery.in('challenge_id', ownChallenges.map((c: any) => c.id)) : writeupQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+        const { data: writeups, error: writeupsError } = await writeupQuery;
+        if (writeupsError) console.error('Pending writeups query error:', writeupsError.message);
+        const writerIds = [...new Set((writeups || []).map((w: any) => w.user_id))];
+        const { data: writers } = writerIds.length ? await supabase.from('profiles').select('id,display_name').in('id', writerIds) : { data: [] };
+        const challengeIdsForWriteups = [...new Set((writeups || []).map((w: any) => w.challenge_id))];
+        const { data: challengeRows } = challengeIdsForWriteups.length ? await supabase.from('challenges').select('id,sequence_number,title').in('id', challengeIdsForWriteups) : { data: [] };
+        const challengeMap = Object.fromEntries((challengeRows || []).map((c: any) => [c.id, c]));
+        const writerMap = Object.fromEntries((writers || []).map((p: any) => [p.id, p.display_name]));
+        const enriched = (writeups || []).map((w: any) => ({ ...w, profiles: { display_name: writerMap[w.user_id] || 'Usuário' }, challenges: challengeMap[w.challenge_id], id: `writeup-${w.id}-${w.status}`, writeup_id: w.id, is_writeup: true, submitted_at: w.created_at, writeup_status: w.status }));
+        if (!cancelled) setPendingWriteups(enriched);
+        activity = [...enriched, ...activity].slice(0, 20);
+      }
+      if (!cancelled) setRecentActivity(activity);
     } catch (err) {
       console.error('Recent activity error:', err);
     }
   };
 
-  const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
-  const isInstructor = profile?.role === 'instructor';
+  const normalizedRole = String(profile?.role || '').trim().toLowerCase();
+  const isAdmin = normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'instructor';
+  const isInstructor = normalizedRole === 'instructor';
 
   const isPtBr = locale === 'pt-BR';
+
+  const reviewWriteup = async (id: string, status: 'approved' | 'rejected') => {
+    const { error } = await supabase.rpc('review_writeup', { p_writeup_id: id, p_status: status });
+    if (error) { toast.error(error.message); return; }
+    toast.success(status === 'approved' ? 'Writeup aprovado e pontuação concedida' : 'Writeup rejeitado');
+    await loadDashboardData(false);
+  };
 
   const instructorGuideSections = [
     {
@@ -225,6 +267,11 @@ export default function DashboardPage() {
             'If needed, use Manual unlock on the card to grant access without solved prerequisite.',
           ],
     },
+    {
+      key: 'instr_writeups',
+      title: isPtBr ? 'Writeups pós-evento e anúncios' : 'Post-event writeups and announcements',
+      lines: isPtBr ? ['Após o encerramento, revise writeups pendentes no dashboard.', 'Aprovação concede 50% dos pontos; rejeição permite novo envio.', 'Use o campo de anúncio no evento para enviar broadcasts aos competidores.'] : ['After an event ends, review pending writeups in the dashboard.', 'Approval grants 50% of the points; rejection allows a new submission.', 'Use the event announcement field to broadcast messages to competitors.'],
+    },
   ];
 
   const competitorGuideSections = [
@@ -284,6 +331,11 @@ export default function DashboardPage() {
             'Plan attempts carefully to avoid exhausting limits on critical challenges.',
           ],
     },
+    {
+      key: 'comp_progress_writeups',
+      title: isPtBr ? 'Progresso, notificações e writeups' : 'Progress, notifications and writeups',
+      lines: isPtBr ? ['Acompanhe o progresso da missão e do evento nas barras e roadmaps de flags.', 'O sino mostra anúncios, First Blood e decisões sobre suas writeups.', 'Após o evento, envie uma solução detalhada; writeups aprovadas valem 50% dos pontos.'] : ['Track mission and event progress with flag bars and roadmaps.', 'The bell shows announcements, First Blood events and writeup decisions.', 'After the event, submit a detailed solution; approved writeups award 50% of the points.'],
+    },
   ];
 
   return (
@@ -327,16 +379,16 @@ export default function DashboardPage() {
                 ) : (
                   recentActivity.map((item: any) => (
                     <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/5">
-                      <div className={`w-2 h-2 rounded-full ${item.is_correct ? 'bg-cyber-green' : 'bg-red-400'}`} />
+                      <div className={`w-2 h-2 rounded-full ${item.is_writeup ? 'bg-cyber-purple' : item.is_correct ? 'bg-cyber-green' : 'bg-red-400'}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm truncate">
                           <span className="font-medium text-gray-200">
                             {item.profiles?.display_name}
                           </span>{' '}
-                          <span className={item.is_correct ? 'text-cyber-green' : 'text-red-400'}>
-                            {item.is_correct ? 'resolveu' : 'tentou'}
+                          <span className={item.is_writeup ? 'text-cyber-purple' : item.is_correct ? 'text-cyber-green' : 'text-red-400'}>
+                            {item.is_writeup ? (item.writeup_status === 'pending' ? 'enviou writeup para aprovação' : `writeup ${item.writeup_status === 'approved' ? 'aprovado' : 'rejeitado'}`) : item.is_correct ? 'resolveu' : 'tentou'}
                           </span>{' '}
-                          <span className="text-gray-400">{item.challenges?.title}</span>
+                          <span className="text-gray-400">Desafio #{item.challenges?.sequence_number || '—'} {item.challenges?.title || ''}</span>
                         </p>
                       </div>
                       <span className="text-xs text-gray-600 whitespace-nowrap">
@@ -381,6 +433,26 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="cyber-card mt-6">
+            <h3 className="text-lg font-bold text-cyber-purple mb-4 flex items-center gap-2">
+              <BookOpen size={20} /> Writeups pendentes ({pendingWriteups.length})
+            </h3>
+            <div className="flex gap-2 mb-4">
+              {(['pending', 'approved', 'rejected'] as const).map(filter => <button key={filter} onClick={() => setWriteupFilter(filter)} className={`px-3 py-1 rounded text-xs ${writeupFilter === filter ? 'bg-cyber-purple/30 text-cyber-purple-light' : 'bg-white/5 text-gray-500'}`}>{filter === 'pending' ? 'Pendentes' : filter === 'approved' ? 'Aprovadas' : 'Rejeitadas'}</button>)}
+            </div>
+            {pendingWriteups.filter((w: any) => w.status === writeupFilter).length === 0 ? <p className="text-gray-500 text-sm">Nenhum writeup neste filtro.</p> : (
+              <div className="space-y-3">
+                {pendingWriteups.filter((w: any) => w.status === writeupFilter).map((writeup: any) => (
+                  <div key={writeup.id} className="rounded-lg bg-white/5 border border-cyber-border p-3">
+                    <p className="text-xs text-gray-500 mb-2">{writeup.profiles?.display_name || 'Usuário'} · Desafio #{writeup.challenges?.sequence_number || '—'} {writeup.challenges?.title || ''} · Enviado em {new Date(writeup.created_at).toLocaleString('pt-BR')}</p>
+                    <p className="text-sm text-gray-300 whitespace-pre-line max-h-24 overflow-y-auto">{writeup.content}</p>
+                    {writeup.status === 'pending' && <div className="flex justify-end gap-2 mt-3"><button onClick={() => reviewWriteup(writeup.writeup_id, 'rejected')} className="cyber-btn-secondary text-xs">Rejeitar</button><button onClick={() => reviewWriteup(writeup.writeup_id, 'approved')} className="cyber-btn-primary text-xs">Aprovar (50%)</button></div>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -491,13 +563,13 @@ export default function DashboardPage() {
                     .filter((item: any) => item.user_id === profile.id)
                     .map((item: any) => (
                       <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/5">
-                        <div className={`w-2 h-2 rounded-full ${item.is_correct ? 'bg-cyber-green' : 'bg-red-400'}`} />
+                        <div className={`w-2 h-2 rounded-full ${item.is_writeup ? item.writeup_status === 'approved' ? 'bg-cyber-green' : item.writeup_status === 'rejected' ? 'bg-red-400' : 'bg-cyber-purple' : item.is_correct ? 'bg-cyber-green' : 'bg-red-400'}`} />
                         <div className="flex-1">
                           <p className="text-sm">
-                            <span className={item.is_correct ? 'text-cyber-green' : 'text-red-400'}>
-                              {item.is_correct ? '✅ Resolvido' : '❌ Incorreto'}
+                            <span className={item.is_writeup ? item.writeup_status === 'approved' ? 'text-cyber-green' : item.writeup_status === 'rejected' ? 'text-red-400' : 'text-cyber-purple' : item.is_correct ? 'text-cyber-green' : 'text-red-400'}>
+                              {item.is_writeup ? `✍️ Writeup ${item.writeup_status === 'approved' ? 'aprovado' : item.writeup_status === 'rejected' ? 'rejeitado' : 'enviado'}` : item.is_correct ? '✅ Resolvido' : '❌ Incorreto'}
                             </span>{' '}
-                            <span className="text-gray-400">{item.challenges?.title}</span>
+                            {item.is_writeup ? <span className="text-gray-400">Evento: {item.events?.name || '—'} · Missão: {item.missions?.name || '—'} · Flag #{item.challenges?.sequence_number || '—'}: {item.challenges?.title || '—'}</span> : <span className="text-gray-400">{item.challenges?.title}</span>}
                           </p>
                         </div>
                         {item.is_correct && (

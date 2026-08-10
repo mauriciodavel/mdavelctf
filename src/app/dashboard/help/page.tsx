@@ -145,6 +145,8 @@ const sections: Section[] = [
       'Each event can offer Shells 🐚 as a reward for completion.',
       '⚠️ Important: Challenges can only be solved while the event is "Live". Scheduled or finished events have challenges locked — competitors cannot see descriptions or submit flags.',
       'Event cards in the listing display: start date/time, end date/time, duration, number of missions, challenges, and captured flags progress (e.g., 2/8 Flags).',
+      'Organizers can send announcements during the event; competitors receive them in real time through the notification bell.',
+      'After the event ends, competitors can submit writeups for review. Approved writeups award 50% of the points.',
     ],
   },
   {
@@ -186,6 +188,8 @@ const sections: Section[] = [
       'Completion requirement: when enabled during challenge creation, select a previous challenge as prerequisite. Until prerequisite is solved (by competitor or team/group member), the challenge stays locked.',
       'When prerequisite-locked, competitor sees only minimal card information (title and hint count), without content access and without flag submission.',
       'Instructor/admin can use Manual unlock on the challenge card to grant access even when prerequisite is not solved.',
+      'The first competitor to solve a challenge receives the First Blood highlight, announced in real time.',
+      'The flag roadmap provides visual progress for each mission and event.',
       '🔒 When the event is not active (scheduled or finished), challenges are locked. Competitors cannot see descriptions, hints, or the submission field.',
     ],
   },

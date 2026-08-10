@@ -35,6 +35,10 @@ export default function EventDetailPage() {
   const [announcement, setAnnouncement] = useState<any>(null);
   const [announcementText, setAnnouncementText] = useState('');
   const [announcementSending, setAnnouncementSending] = useState(false);
+  const [writeupText, setWriteupText] = useState<Record<string, string>>({});
+  const [writeupSending, setWriteupSending] = useState<string | null>(null);
+  const [writeups, setWriteups] = useState<Record<string, any>>({});
+  const [writeupHistory, setWriteupHistory] = useState<Record<string, any[]>>({});
   const [reactions, setReactions] = useState<Record<string, { likes: number; dislikes: number; userReaction?: string }>>({});
   const [loading, setLoading] = useState(true);
 
@@ -68,6 +72,7 @@ export default function EventDetailPage() {
   // Team data for team-mode events
   const [userTeam, setUserTeam] = useState<any>(null);
   const [teamSubmissions, setTeamSubmissions] = useState<any[]>([]);
+  const [missionProgress, setMissionProgress] = useState<Record<string, { challenges: any[]; solved: Set<string> }>>({});
 
   // Track last solved challenge points for modal
   const [lastSolvedPoints, setLastSolvedPoints] = useState(0);
@@ -108,6 +113,27 @@ export default function EventDetailPage() {
         .eq('event_id', eventId).order('sequence', { ascending: true });
       if (missErr) console.error('Missions query error:', missErr.message);
       if (!cancelled) setMissions(miss || []);
+
+      if (miss?.length) {
+        const missionIds = miss.map((m: any) => m.id);
+        const { data: allChallenges } = await supabase.from('challenges')
+          .select('id, mission_id, sequence_number').in('mission_id', missionIds).order('sequence_number');
+        const challengeIds = (allChallenges || []).map((c: any) => c.id);
+        const { data: solvedRows } = profile?.id && challengeIds.length
+          ? await supabase.from('submissions').select('challenge_id').in('challenge_id', challengeIds).eq('user_id', profile.id).eq('is_correct', true)
+          : { data: [] };
+        const { data: solvedWriteups } = profile?.id && challengeIds.length
+          ? await supabase.from('writeups').select('challenge_id').in('challenge_id', challengeIds).eq('user_id', profile.id).eq('status', 'approved')
+          : { data: [] };
+        const progress: Record<string, { challenges: any[]; solved: Set<string> }> = {};
+        miss.forEach((m: any) => {
+          progress[m.id] = {
+            challenges: (allChallenges || []).filter((c: any) => c.mission_id === m.id),
+            solved: new Set([...((solvedRows || []).map((s: any) => s.challenge_id)), ...((solvedWriteups || []).map((s: any) => s.challenge_id))].filter((id: string) => (allChallenges || []).find((c: any) => c.id === id)?.mission_id === m.id)),
+          };
+        });
+        setMissionProgress(progress);
+      }
 
       // Load user's team for team-mode events
       if (ev && profile?.id) {
@@ -151,6 +177,14 @@ export default function EventDetailPage() {
       const { data: subs } = await supabase.from('submissions').select('*')
         .in('challenge_id', challengeIds).eq('user_id', profile.id);
       setSubmissions(subs || []);
+      const { data: ownWriteups } = await supabase.from('writeups').select('*').eq('user_id', profile.id).in('challenge_id', challengeIds).order('created_at', { ascending: false });
+      const writeupMap: Record<string, any> = {};
+      const historyMap: Record<string, any[]> = {};
+      (ownWriteups || []).forEach((w: any) => { (historyMap[w.challenge_id] ||= []).push(w); if (!writeupMap[w.challenge_id]) writeupMap[w.challenge_id] = w; });
+      setWriteups(writeupMap);
+      setWriteupHistory(historyMap);
+      const approvedWriteupSubmissions = (ownWriteups || []).filter((w: any) => w.status === 'approved').map((w: any) => ({ challenge_id: w.challenge_id, is_correct: true, points_awarded: w.points_awarded || 0, submitted_at: w.reviewed_at }));
+      setSubmissions([...(subs || []), ...approvedWriteupSubmissions]);
 
       const { data: correctSubs } = await supabase.from('submissions')
         .select('challenge_id, user_id, submitted_at, profiles(display_name)')
@@ -240,6 +274,20 @@ export default function EventDetailPage() {
     if (error) toast.error(error.message);
     else { setAnnouncementText(''); toast.success('Anúncio enviado'); }
     setAnnouncementSending(false);
+  };
+
+  const submitWriteup = async (challengeId: string) => {
+    const content = (writeupText[challengeId] || '').trim();
+    if (content.length < 20) { toast.error('A solução deve ter pelo menos 20 caracteres'); return; }
+    setWriteupSending(challengeId);
+    const rejectedLookup = await supabase.from('writeups').select('id,status').eq('challenge_id', challengeId).eq('user_id', profile?.id).eq('status', 'rejected').order('created_at', { ascending: false }).limit(1);
+    const existing = writeups[challengeId] || rejectedLookup.data?.[0];
+    const { error } = existing
+      ? await supabase.from('writeups').update({ content, status: 'pending', reviewer_id: null, reviewed_at: null, points_awarded: 0 }).eq('id', existing.id)
+      : await supabase.from('writeups').insert({ challenge_id: challengeId, user_id: profile?.id, content });
+    if (error) toast.error(error.code === '23505' ? 'Você já enviou um writeup para este desafio' : error.message);
+    else { toast.success('Writeup enviado para aprovação'); setWriteupText({ ...writeupText, [challengeId]: '' }); }
+    setWriteupSending(null);
   };
 
   const handleSaveMission = async () => {
@@ -522,6 +570,7 @@ export default function EventDetailPage() {
 
     setAnswers({ ...answers, [challengeId]: '' });
     loadMissionDetails(selectedMission);
+    loadEvent();
   };
 
   const handleReaction = async (challengeId: string, reaction: 'like' | 'dislike') => {
@@ -644,6 +693,35 @@ export default function EventDetailPage() {
                       </div>
                       <h3 className="text-lg font-bold">{mission.name}</h3>
                       <p className="text-sm text-gray-400 line-clamp-2 mt-1 whitespace-pre-line">{mission.description}</p>
+                      {(() => {
+                        const progress = missionProgress[mission.id];
+                        const total = progress?.challenges.length || 0;
+                        const solved = progress?.solved.size || 0;
+                        const percent = total ? Math.round((solved / total) * 100) : 0;
+                        return (
+                          <div className="mt-4 rounded-lg border border-cyber-border/70 bg-black/20 p-3">
+                            <div className="flex items-center justify-between text-xs mb-2">
+                              <span className="text-gray-400">Progresso da missão</span>
+                              <span className="font-semibold text-cyber-cyan">{solved}/{total} desafios</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-cyber-cyan to-cyber-green transition-all" style={{ width: `${percent}%` }} />
+                            </div>
+                            <div className="flex items-center gap-2 mt-3">
+                              {(progress?.challenges || []).map((challenge: any, index: number) => {
+                                const conquered = progress?.solved.has(challenge.id);
+                                return <React.Fragment key={challenge.id}>
+                                  <span title={`Desafio #${challenge.sequence_number}${conquered ? ' conquistado' : ''}`} className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${conquered ? 'border-cyber-green bg-cyber-green/20 text-cyber-green' : 'border-gray-700 bg-gray-900 text-gray-500'}`}>
+                                    {conquered ? '⚑' : challenge.sequence_number || index + 1}
+                                  </span>
+                                  {index < (progress?.challenges.length || 0) - 1 && <span className={`h-px flex-1 ${conquered ? 'bg-cyber-green/60' : 'bg-gray-800'}`} />}
+                                </React.Fragment>;
+                              })}
+                              {!total && <span className="text-xs text-gray-600">Nenhum desafio cadastrado</span>}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {mission.author && <p className="text-xs text-gray-500 mt-2">Autor: {mission.author}</p>}
                     </div>
                     <div className="flex items-center gap-1">
@@ -876,6 +954,7 @@ export default function EventDetailPage() {
 
                   {/* Description — hidden when locked and not solved */}
                   {isLocked && !effectivelySolved ? (
+                    <>
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-sm text-amber-400/70 mb-3">
                       <Lock size={14} />
                       {prerequisiteLocked
@@ -884,6 +963,22 @@ export default function EventDetailPage() {
                           ? 'Conteúdo disponível quando o evento iniciar.'
                           : 'Evento encerrado. Conteúdo bloqueado.'}
                     </div>
+                    {!isEventActive() && !prerequisiteLocked && !canManage && !writeups[challenge.id] && (
+                      <div className="mt-3 rounded-lg border border-cyber-purple/30 bg-cyber-purple/5 p-3">
+                        <p className="text-xs text-cyber-purple-light mb-2">Envie um writeup pós-evento. Se aprovado, você receberá 50% dos pontos.</p>
+                        <textarea value={writeupText[challenge.id] || ''} onChange={e => setWriteupText({ ...writeupText, [challenge.id]: e.target.value })} className="cyber-textarea" rows={4} placeholder="Explique sua solução..." />
+                        <div className="flex justify-end mt-2"><button onClick={() => submitWriteup(challenge.id)} disabled={writeupSending === challenge.id} className="cyber-btn-secondary">{writeupSending === challenge.id ? 'Enviando...' : 'Enviar writeup'}</button></div>
+                      </div>
+                    )}
+                    {!isEventActive() && writeups[challenge.id] && (
+                      <div className="mt-3 rounded-lg border border-cyber-purple/30 bg-cyber-purple/5 p-3 text-sm">
+                        <p className="text-cyber-purple-light font-semibold">Writeup {writeups[challenge.id].status === 'pending' ? 'pendente' : writeups[challenge.id].status === 'approved' ? 'aprovado' : 'rejeitado'}</p>
+                        <p className="text-xs text-gray-500 mt-1">Enviado em {new Date(writeups[challenge.id].created_at).toLocaleString('pt-BR')}</p>
+                        {(writeupHistory[challenge.id] || []).map((item: any) => <p key={item.id} className="text-[11px] text-gray-500">Histórico: {item.status} · {new Date(item.reviewed_at || item.created_at).toLocaleString('pt-BR')}</p>)}
+                        {writeups[challenge.id].status === 'rejected' && <button onClick={() => { const next = { ...writeups }; delete next[challenge.id]; setWriteups(next); }} className="cyber-btn-secondary text-xs mt-2">Enviar novo writeup</button>}
+                      </div>
+                    )}
+                    </>
                   ) : (
                     <>
                       {challenge.description && (

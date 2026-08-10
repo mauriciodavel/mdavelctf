@@ -28,7 +28,9 @@ export default function LoginPage() {
       toast.error(error);
     } else {
       toast.success('Login realizado com sucesso!');
-      router.push('/dashboard');
+      // Force a full navigation so the Supabase SSR cookies are sent to
+      // middleware before the protected dashboard is rendered.
+      window.location.assign('/dashboard');
     }
   };
 
