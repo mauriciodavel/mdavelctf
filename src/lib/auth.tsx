@@ -9,6 +9,7 @@ export type UserRole = 'super_admin' | 'admin' | 'instructor' | 'competitor';
 export interface Profile {
   id: string;
   display_name: string;
+  legal_name?: string | null;
   email: string;
   role: UserRole;
   avatar_url: string | null;

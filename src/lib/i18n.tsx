@@ -197,7 +197,7 @@ const translations: TranslationDict = {
   'score.all_challenges': { 'pt-BR': 'Todos os Desafios', 'en': 'All Challenges' },
   'score.general_ranking': { 'pt-BR': 'Ranking Geral', 'en': 'General Ranking' },
   'score.last_flag': { 'pt-BR': 'Última Flag', 'en': 'Last Flag' },
-  'score.ranking_criteria': { 'pt-BR': '🏆 Critérios de ranking: 1º Pontuação (maior → melhor) · 2º Dicas usadas (menor → melhor) · 3º Hora da última flag (mais cedo → melhor)', 'en': '🏆 Ranking criteria: 1st Score (higher → better) · 2nd Hints used (fewer → better) · 3rd Last flag time (earlier → better)' },
+  'score.ranking_criteria': { 'pt-BR': '🏆 Critérios de ranking:\n1º Pontuação — maior é melhor\n2º Dicas usadas — menos é melhor\n3º Hora da última flag — mais cedo é melhor', 'en': '🏆 Ranking criteria:\n1st Score — higher is better\n2nd Hints used — fewer is better\n3rd Last flag time — earlier is better' },
 
   // ── Profile ──
   'profile.title': { 'pt-BR': 'Meu Perfil', 'en': 'My Profile' },

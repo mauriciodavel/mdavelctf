@@ -24,6 +24,7 @@ export default function ProfilePage() {
   const [pwLoading, setPwLoading] = useState(false);
   const [form, setForm] = useState({
     display_name: '',
+    legal_name: '',
     bio: '',
     course: '',
     class_group: '',
@@ -45,6 +46,7 @@ export default function ProfilePage() {
     if (profile) {
       setForm({
         display_name: profile.display_name || '',
+        legal_name: profile.legal_name || '',
         bio: profile.bio || '',
         course: profile.course || '',
         class_group: profile.class_group || '',
@@ -112,6 +114,7 @@ export default function ProfilePage() {
     const { error } = await supabase.from('profiles')
       .update({
         display_name: form.display_name,
+        legal_name: form.legal_name,
         bio: form.bio,
         course: form.course,
         class_group: form.class_group,
@@ -213,6 +216,10 @@ export default function ProfilePage() {
               <label className="cyber-label">{t('profile.display_name')}</label>
               <input type="text" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })}
                 className="cyber-input" />
+              <label className="cyber-label mt-4">Nome completo para certificados</label>
+              <input type="text" value={form.legal_name} onChange={(e) => setForm({ ...form, legal_name: e.target.value })}
+                placeholder="Seu nome completo (nome civil)" className="cyber-input" />
+              <p className="text-xs text-cyber-cyan/80 mt-1">Este nome será utilizado na emissão dos seus certificados de participação.</p>
             </div>
             <div>
               <label className="cyber-label">{t('profile.avatar_url')}</label>

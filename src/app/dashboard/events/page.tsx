@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import { CATEGORIES, toDirectImageUrl } from '@/lib/utils';
 import Modal from '@/components/Modal';
-import { Flag, Plus, Edit, Trash2, Copy, Search, Eye, Clock, Users, ArrowRight, Calendar, Timer, Target, Shield } from 'lucide-react';
+import { Flag, Plus, Edit, Trash2, Copy, Search, Eye, Clock, Users, ArrowRight, Calendar, Timer, Target, Shield, Award } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -59,6 +59,57 @@ export default function EventsPage() {
   };
 
   const canManage = ['super_admin', 'admin', 'instructor'].includes(profile?.role || '');
+
+  const escapeCertificateHtml = (value: unknown) => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
+  const printCertificate = async (event: Event) => {
+    const stats = eventStats[event.id];
+    if (!stats || new Date(event.end_date) > new Date()) {
+      toast.error('O certificado estará disponível após o encerramento do evento.');
+      return;
+    }
+    const participant = profile?.legal_name || profile?.display_name || profile?.email || 'Participante';
+    const { data: existingCertificate } = await supabase.from('certificates').select('code, issued_at, participant_legal_name, workload_hours, event_start, event_end, details').eq('user_id', profile?.id).eq('event_id', event.id).maybeSingle();
+    let certificate = existingCertificate;
+    let error = null;
+    if (!certificate) {
+      const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+      const { data: missions } = await supabase.from('missions').select('id, name, description, time_limit, sequence').eq('event_id', event.id).order('sequence');
+      const missionIds = (missions || []).map((mission: any) => mission.id);
+      const { data: challenges } = missionIds.length ? await supabase.from('challenges').select('id, mission_id, sequence_number, title, what_i_learned').in('mission_id', missionIds).order('sequence_number') : { data: [] };
+      const details = (missions || []).map((mission: any) => ({
+        name: mission.name, description: mission.description || '', workload_minutes: mission.time_limit || 0,
+        challenges: (challenges || []).filter((challenge: any) => challenge.mission_id === mission.id).map((challenge: any) => ({
+          sequence: challenge.sequence_number, title: challenge.title, what_i_learned: challenge.what_i_learned || '', captured: stats.capturedIds.has(challenge.id),
+        })),
+      }));
+      const workloadHours = (missions || []).reduce((sum: number, mission: any) => sum + (Number(mission.time_limit) || 0), 0) / 60;
+      const result = await supabase.from('certificates').insert({
+        code, user_id: profile?.id, event_id: event.id, participant_name: participant,
+        participant_legal_name: profile?.legal_name || participant, event_name: event.name, score: 0,
+        challenges_solved: stats.captured, challenges_total: stats.challenges, workload_hours: workloadHours,
+        event_start: event.start_date, event_end: event.end_date, details,
+      }).select('code, issued_at, participant_legal_name, workload_hours, event_start, event_end, details').single();
+      certificate = result.data;
+      error = result.error;
+    }
+    if (error || !certificate) { toast.error('Não foi possível registrar o certificado. Execute a migration de certificados no Supabase.'); return; }
+    const validationUrl = `${window.location.origin}/certificate/${certificate.code}`;
+    const certificateDetails: any[] = certificate.details || [];
+    const workloadHours = Number(certificate.workload_hours || 0).toFixed(2);
+    const eventStart = certificate.event_start || event.start_date;
+    const eventEnd = certificate.event_end || event.end_date;
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) { toast.error('Permita pop-ups para gerar o certificado.'); return; }
+    const completion = stats.challenges ? Math.round((stats.captured / stats.challenges) * 100) : 0;
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Certificado - ${escapeCertificateHtml(event.name)}</title><style>
+      @page{size:A4 landscape;margin:3mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;background:#090d1b;font-family:Arial,sans-serif;color:#edf4ff}.certificate{width:297mm;height:204mm;margin:auto;padding:10mm;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 15% 15%,#16395a,#090d1b 48%,#140d2d);page-break-after:always}.frame{width:100%;height:100%;border:1px solid #27d3e8;box-shadow:0 0 0 5px #111b35,0 0 45px #1aabc4;padding:18mm;text-align:center;background:linear-gradient(135deg,#101b31,#101323 70%);position:relative}.frame:before{content:'</>';position:absolute;right:18mm;top:8mm;color:#27d3e8;font:bold 18px monospace;opacity:.7}.eyebrow{font:700 10px monospace;letter-spacing:3px;text-transform:uppercase;color:#27d3e8}.title{font:800 36px Arial;margin:16px 0 8px;color:#fff}.text{font-size:14px;color:#94a8c7;margin:6px}.name{font:800 30px Arial;color:#75f5d1;margin:14px 0;border-bottom:1px solid #2c4665;padding-bottom:8px}.event{font-size:22px;font-weight:700;color:#fff;margin:10px}.stats{display:flex;justify-content:center;gap:45px;margin:20px 0;font:12px monospace;color:#9cb2d1}.stats strong{display:block;font-size:21px;color:#ffc857;margin-bottom:3px}.verify{margin:14px auto 0;padding:8px 14px;border:1px solid #2c4665;width:max-content;max-width:100%;font:10px monospace;color:#b9c9e4}.verify b{color:#75f5d1}.footer{margin-top:12px;font:10px Arial;color:#7185a5}.back{page-break-before:always;padding:5mm}.back .frame{padding:8mm;text-align:left}.back .eyebrow{text-align:center}.back .title{font-size:22px;text-align:center;margin:6px 0 10px}.mission{border:1px solid #2c4665;margin:5px 0;padding:5px 7px;text-align:left;break-inside:avoid}.mission h3{color:#75f5d1;margin:0 0 2px;font-size:12px}.mission>p{font-size:9px;line-height:1.15;margin:2px 0 4px}.challenge{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;border-top:1px solid #24344d;padding:3px 0;font-size:9px;line-height:1.15}.challenge span{min-width:0;overflow-wrap:anywhere}.challenge small{color:#b9c9e4;font-size:8px}.ok{color:#75f5d1;white-space:nowrap}.no{color:#ff758f;white-space:nowrap}@media print{body{background:#090d1b!important}.certificate{margin:0}}
+    </style></head><body><main class="certificate"><section class="frame"><div class="eyebrow">MDavel CTF // certificado de participação</div><h1 class="title">CERTIFICADO DE CONQUISTA</h1><div class="name">${escapeCertificateHtml(participant)}</div><p class="text">concluiu sua participação no evento</p><div class="event">${escapeCertificateHtml(event.name)}</div><p class="text">${escapeCertificateHtml(new Date(eventStart).toLocaleDateString('pt-BR'))} — ${escapeCertificateHtml(new Date(eventEnd).toLocaleDateString('pt-BR'))} · carga horária: ${escapeCertificateHtml(workloadHours)}h</p><div class="stats"><div><strong>${stats.captured}/${stats.challenges}</strong>desafios resolvidos</div><div><strong>${completion}%</strong>progresso</div><div><strong>${stats.captured}</strong>flags capturadas</div></div><div class="verify">VALIDAÇÃO: <b>${escapeCertificateHtml(certificate.code)}</b><br/>${escapeCertificateHtml(validationUrl)}</div><p class="footer">Emitido em ${escapeCertificateHtml(new Date(certificate.issued_at).toLocaleDateString('pt-BR'))} · Verifique a autenticidade pelo código ou link acima.</p></section></main><section class="certificate back"><div class="frame"><div class="eyebrow">MDavel CTF // detalhes da formação</div><h1 class="title">Missões e habilidades</h1>${certificateDetails.map(mission => `<div class="mission"><h3>${escapeCertificateHtml(mission.name)}</h3><p>${escapeCertificateHtml(mission.description)}</p>${(mission.challenges || []).map((challenge: any) => `<div class="challenge"><span>${escapeCertificateHtml(challenge.sequence)} · <small>${escapeCertificateHtml(challenge.what_i_learned || 'Habilidade não informada')}</small></span><b class="${challenge.captured ? 'ok' : 'no'}">${challenge.captured ? 'CAPTURADA' : 'NÃO CAPTURADA'}</b></div>`).join('')}</div>`).join('')}</div></section></body></html>`);
+    printWindow.document.close(); printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 350);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -432,10 +483,19 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                <Link href={`/dashboard/events/${event.id}`}
-                  className="mt-4 cyber-btn-secondary text-center text-sm flex items-center justify-center gap-1">
-                  {t('common.view')} <ArrowRight size={14} />
-                </Link>
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Link href={`/dashboard/events/${event.id}`}
+                    className="cyber-btn-secondary text-center text-sm flex items-center justify-center gap-1">
+                    {t('common.view')} <ArrowRight size={14} />
+                  </Link>
+                  {profile?.role === 'competitor' && (
+                    <button onClick={() => printCertificate(event)} disabled={!stats || new Date(event.end_date) > new Date()}
+                      title={new Date(event.end_date) > new Date() ? 'Disponível após o encerramento do evento' : 'Gerar certificado'}
+                      className="cyber-btn-primary text-center text-sm flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Award size={14} /> Certificado PDF
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

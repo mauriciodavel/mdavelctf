@@ -62,7 +62,10 @@ export default function EventDetailPage() {
     requires_completion: false,
     required_challenge_id: '',
     manual_unlock_enabled: false,
+    category: 'Web', tags: '',
   });
+  const [challengeCategoryFilter, setChallengeCategoryFilter] = useState('all');
+  const challengeCategories = ['Web', 'Crypto', 'Forense', 'OSINT', 'Pwn', 'Reversing', 'Networking', 'Misc'];
   const [hintForm, setHintForm] = useState({ content: '', shell_cost: 10, challenge_id: '' });
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
@@ -101,8 +104,8 @@ export default function EventDetailPage() {
     return () => { cancelled = true; };
   }, [eventId]);
 
-  const loadEvent = async (cancelled = false) => {
-    setLoading(true);
+  const loadEvent = async (cancelled = false, showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const { data: ev, error: evErr } = await supabase.from('events').select('*').eq('id', eventId).single();
       if (evErr) console.error('Event query error:', evErr.message);
@@ -341,6 +344,8 @@ export default function EventDetailPage() {
       points: challengeForm.points,
       flag: challengeForm.flag,
       difficulty: challengeForm.difficulty,
+      category: challengeForm.category,
+      tags: challengeForm.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean),
       what_i_learned: challengeForm.what_i_learned || null,
       learn_more_url: challengeForm.learn_more_url || null,
       requires_completion: challengeForm.requires_completion,
@@ -570,7 +575,11 @@ export default function EventDetailPage() {
 
     setAnswers({ ...answers, [challengeId]: '' });
     loadMissionDetails(selectedMission);
-    loadEvent();
+    // Refresh progress in the background. Calling loadEvent() with its default
+    // loading state here used to replace the congratulations modal with the
+    // full-page loading screen and left it stuck because this invocation is not
+    // awaited by the submit handler.
+    loadEvent(false, false);
   };
 
   const handleReaction = async (challengeId: string, reaction: 'like' | 'dislike') => {
@@ -677,11 +686,11 @@ export default function EventDetailPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {missions.map((mission) => (
-                <div key={mission.id} className="cyber-card-glow cursor-pointer group"
+                <div key={mission.id} className="cyber-card-glow cursor-pointer group min-w-0 overflow-hidden"
                   onClick={() => loadMissionDetails(mission)}>
                   <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className={`cyber-badge ${DIFFICULTY_COLORS[mission.difficulty]}`}>
                           {difficultyLabel[mission.difficulty]}
                         </span>
@@ -691,15 +700,15 @@ export default function EventDetailPage() {
                           </span>
                         )}
                       </div>
-                      <h3 className="text-lg font-bold">{mission.name}</h3>
-                      <p className="text-sm text-gray-400 line-clamp-2 mt-1 whitespace-pre-line">{mission.description}</p>
+                      <h3 className="text-lg font-bold break-words">{mission.name}</h3>
+                      <p className="text-sm text-gray-400 line-clamp-2 mt-1 whitespace-pre-line break-words">{mission.description}</p>
                       {(() => {
                         const progress = missionProgress[mission.id];
                         const total = progress?.challenges.length || 0;
                         const solved = progress?.solved.size || 0;
                         const percent = total ? Math.round((solved / total) * 100) : 0;
                         return (
-                          <div className="mt-4 rounded-lg border border-cyber-border/70 bg-black/20 p-3">
+                          <div className="mt-4 w-full min-w-0 rounded-lg border border-cyber-border/70 bg-black/20 p-3">
                             <div className="flex items-center justify-between text-xs mb-2">
                               <span className="text-gray-400">Progresso da missão</span>
                               <span className="font-semibold text-cyber-cyan">{solved}/{total} desafios</span>
@@ -707,7 +716,8 @@ export default function EventDetailPage() {
                             <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
                               <div className="h-full rounded-full bg-gradient-to-r from-cyber-cyan to-cyber-green transition-all" style={{ width: `${percent}%` }} />
                             </div>
-                            <div className="flex items-center gap-2 mt-3">
+                            <div className="mt-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-cyber-purple/50 scrollbar-track-transparent">
+                              <div className="flex min-w-max items-center gap-2">
                               {(progress?.challenges || []).map((challenge: any, index: number) => {
                                 const conquered = progress?.solved.has(challenge.id);
                                 return <React.Fragment key={challenge.id}>
@@ -718,6 +728,7 @@ export default function EventDetailPage() {
                                 </React.Fragment>;
                               })}
                               {!total && <span className="text-xs text-gray-600">Nenhum desafio cadastrado</span>}
+                              </div>
                             </div>
                           </div>
                         );
@@ -801,6 +812,7 @@ export default function EventDetailPage() {
           </div>
 
           {/* Challenges */}
+          <div className="flex flex-wrap items-center gap-2 mb-3"><span className="text-xs text-gray-500">Filtrar categoria:</span><select value={challengeCategoryFilter} onChange={e => setChallengeCategoryFilter(e.target.value)} className="cyber-select text-xs py-1"><option value="all">Todas</option>{challengeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></div>
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-cyber-green flex items-center gap-2">
               <Flag size={20} /> Desafios
@@ -829,6 +841,7 @@ export default function EventDetailPage() {
                     requires_completion: false,
                     required_challenge_id: '',
                     manual_unlock_enabled: false,
+                    category: 'Web', tags: '',
                   });
                   setChallengeModalOpen(true);
                 }} className="cyber-btn-primary flex items-center gap-1 text-sm">
@@ -839,7 +852,7 @@ export default function EventDetailPage() {
           </div>
 
           <div className="space-y-4">
-            {challenges.map((challenge) => {
+              {challenges.filter((c: any) => challengeCategoryFilter === 'all' || c.category === challengeCategoryFilter).map((challenge) => {
               const solved = submissions.some(s => s.challenge_id === challenge.id && s.is_correct);
               const teamSolved = userTeam ? teamSubmissions.some(s => s.challenge_id === challenge.id && s.is_correct) : false;
               const effectivelySolved = solved || teamSolved;
@@ -865,13 +878,13 @@ export default function EventDetailPage() {
               const minimalLockedView = prerequisiteLocked && !canManage;
 
               return (
-                <div key={challenge.id} className={`cyber-card border-l-4 ${effectivelySolved ? 'border-l-cyber-green' : isLocked ? 'border-l-amber-500/50' : 'border-l-gray-600'}`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
+                <div key={challenge.id} className={`cyber-card border-l-4 min-w-0 overflow-hidden ${effectivelySolved ? 'border-l-cyber-green' : isLocked ? 'border-l-amber-500/50' : 'border-l-gray-600'}`}>
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 mb-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         {isLocked && !effectivelySolved && <Lock size={16} className="text-amber-400" />}
                         <span className="text-xs text-gray-500 font-mono">#{challenge.sequence_number}</span>
-                        <h4 className="font-bold text-white">{challenge.title}</h4>
+                        <h4 className="font-bold text-white break-words">{challenge.title}</h4>
                         {firstBloods[challenge.id] && (
                           <span className="cyber-badge bg-amber-500/20 text-amber-300 border border-amber-400/30" title="Primeiro usuário a resolver este desafio">
                             🩸 Primeiro Sangue{firstBloods[challenge.id].profiles?.display_name ? ` · ${firstBloods[challenge.id].profiles.display_name}` : ''}
@@ -898,10 +911,10 @@ export default function EventDetailPage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
                       {!minimalLockedView && <span className="text-sm font-bold text-cyber-cyan">{challenge.points} pts</span>}
                       {canManage && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex max-w-full flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleToggleManualUnlock(challenge.id, !challenge.manual_unlock_enabled)}
@@ -936,7 +949,8 @@ export default function EventDetailPage() {
                               learn_more_url: challenge.learn_more_url || '',
                                   requires_completion: !!challenge.requires_completion,
                                   required_challenge_id: challenge.required_challenge_id || '',
-                                  manual_unlock_enabled: !!challenge.manual_unlock_enabled,
+                              manual_unlock_enabled: !!challenge.manual_unlock_enabled,
+                              category: challenge.category || 'Web', tags: (challenge.tags || []).join(', '),
                             });
                             setChallengeModalOpen(true);
                           }} className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-cyber-cyan">
@@ -1207,6 +1221,7 @@ export default function EventDetailPage() {
             </div>
             <div>
               <label className="cyber-label">Nível de Dificuldade</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="cyber-label">Categoria</label><select value={challengeForm.category} onChange={e => setChallengeForm({ ...challengeForm, category: e.target.value })} className="cyber-select">{challengeCategories.map(category => <option key={category}>{category}</option>)}</select></div><div><label className="cyber-label">Tags</label><input value={challengeForm.tags} onChange={e => setChallengeForm({ ...challengeForm, tags: e.target.value })} className="cyber-input" placeholder="sqli, autenticação, web" /></div></div>
               <select value={challengeForm.difficulty}
                 onChange={(e) => setChallengeForm({ ...challengeForm, difficulty: e.target.value })} className="cyber-select">
                 {CHALLENGE_DIFFICULTIES.map((d) => (
@@ -1332,6 +1347,7 @@ export default function EventDetailPage() {
             </div>
             <button onClick={() => setFirstBloodNotice(null)} className="cyber-btn-primary">Fechar</button>
           </div>
+          
         )}
       </Modal>
 
@@ -1374,3 +1390,4 @@ export default function EventDetailPage() {
     </div>
   );
 }
+

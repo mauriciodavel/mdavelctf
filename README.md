@@ -320,6 +320,14 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 - **Coluna "Última Flag"**: exibe data e hora da captura da última bandeira
 - **Banner de critérios de ranking**: explicação dos critérios visível ao usuário
 - Progresso (desafios resolvidos / total)
+- Certificado de participaÃ§Ã£o em PDF para competidores, liberado apÃ³s o encerramento do evento
+- Certificados com visual CTF moderno, cÃ³digo Ãºnico de 8 caracteres e validaÃ§Ã£o pÃºblica em `/certificate/[code]`
+- Certificados com frente e verso A4: nome completo, perÃ­odo, carga horÃ¡ria, missÃµes, habilidades e status dos desafios
+- PÃ¡gina `/dashboard/certificates` para visualizaÃ§Ã£o dos competidores e gerenciamento por Instrutor/Admin/Super Admin
+- ValidaÃ§Ã£o pÃºblica usando URL absoluta baseada na origem atual (localhost ou domÃ­nio de produÃ§Ã£o)
+- Painel visual com mÃ©tricas, pontuaÃ§Ã£o por participante e capturas por categoria, respeitando o perfil logado
+- Exportação dos resultados filtrados em CSV (download direto)
+- Exportação dos resultados filtrados em PDF por janela de impressão (Salvar como PDF)
 - Porcentagem de acerto
 - Posição do usuário destacada
 

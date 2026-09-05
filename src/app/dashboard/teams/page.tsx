@@ -669,18 +669,18 @@ export default function TeamsPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users className="text-cyber-cyan" size={28} /> {t('nav.teams')}
         </h1>
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 sm:w-64">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
+          <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder={t('common.search')} className="cyber-input pl-9 py-2 text-sm" />
           </div>
           <button onClick={() => setJoinModalOpen(true)}
-            className="cyber-btn-success flex items-center gap-2 text-sm whitespace-nowrap">
+            className="cyber-btn-success flex min-w-0 flex-1 items-center justify-center gap-2 text-sm sm:flex-none">
             <UserPlus size={16} /> {t('team.join')}
           </button>
           <button onClick={() => { setForm({ name: '', is_public: false, image_url: '' }); setCreateModalOpen(true); }}
-            className="cyber-btn-primary flex items-center gap-2 text-sm whitespace-nowrap">
+            className="cyber-btn-primary flex min-w-0 flex-1 items-center justify-center gap-2 text-sm sm:flex-none">
             <Plus size={16} /> {t('team.create')}
           </button>
         </div>

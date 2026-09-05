@@ -62,6 +62,15 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [profile?.id]);
 
+  useEffect(() => {
+    if (!profile?.id) return;
+    const channel = supabase.channel(`dashboard-writeups-${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'writeups' }, () => loadDashboardData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => loadDashboardData(false))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id]);
+
   const loadDashboardData = async (cancelled: boolean) => {
     if (!profile) return;
     const now = new Date().toISOString();
@@ -135,10 +144,27 @@ export default function DashboardPage() {
     try {
       const { data: recent } = await supabase
         .from('submissions')
-        .select('*, profiles(display_name), challenges(title)')
+        .select('*, profiles(display_name), challenges(title, mission_id)')
         .order('submitted_at', { ascending: false })
         .limit(10);
       let activity = recent || [];
+      const missionIds = [...new Set(activity.map((s: any) => s.challenges?.mission_id).filter(Boolean))];
+      const { data: feedMissions } = missionIds.length ? await supabase.from('missions').select('id,event_id').in('id', missionIds) : { data: [] };
+      const feedMissionMap = Object.fromEntries((feedMissions || []).map((m: any) => [m.id, m.event_id]));
+      let visibleEventIds: string[] | null = null;
+      let visibleTeamIds: string[] = [];
+      if (role === 'instructor') {
+        const { data } = await supabase.from('events').select('id').eq('created_by', profile.id); visibleEventIds = (data || []).map((e: any) => e.id);
+      } else if (role === 'competitor') {
+        const { data: teamMemberships } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
+        visibleTeamIds = (teamMemberships || []).map((m: any) => m.team_id);
+        const { data: memberships } = await supabase.from('class_members').select('class_id').eq('user_id', profile.id).eq('status', 'active');
+        const classIds = (memberships || []).map((m: any) => m.class_id);
+        const { data: linked } = classIds.length ? await supabase.from('event_classes').select('event_id').in('class_id', classIds) : { data: [] };
+        const { data: publicEvents } = await supabase.from('events').select('id').eq('visibility', 'public');
+        visibleEventIds = [...new Set([...(linked || []).map((e: any) => e.event_id), ...(publicEvents || []).map((e: any) => e.id)])];
+      }
+      if (visibleEventIds) activity = activity.filter((s: any) => visibleEventIds!.includes(feedMissionMap[s.challenges?.mission_id]) && (role !== 'competitor' || s.user_id === profile.id || (s.team_id && visibleTeamIds.includes(s.team_id))));
       if (role === 'competitor') {
         const { data: ownWriteups } = await supabase.from('writeups').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(20);
         const ids = [...new Set((ownWriteups || []).map((w: any) => w.challenge_id))];
@@ -188,6 +214,11 @@ export default function DashboardPage() {
   };
 
   const instructorGuideSections = [
+    {
+      key: 'instr_certificates',
+      title: isPtBr ? 'Gerenciamento de certificados' : 'Certificate management',
+      lines: isPtBr ? ['Na pÃ¡gina Certificados, consulte os documentos emitidos nos seus eventos.', 'Exclua um certificado para permitir que o participante gere uma nova versÃ£o atualizada.', 'A validaÃ§Ã£o pÃºblica usa o cÃ³digo de 8 caracteres e o link impresso no certificado.'] : ['On the Certificates page, review documents issued for your events.', 'Delete a certificate so the participant can generate an updated version.', 'Public validation uses the 8-character code and link printed on the certificate.'],
+    },
     {
       key: 'instr_flow_order',
       title: isPtBr ? 'Fluxo principal (ordem recomendada)' : 'Main flow (recommended order)',
@@ -275,6 +306,11 @@ export default function DashboardPage() {
   ];
 
   const competitorGuideSections = [
+    {
+      key: 'comp_certificates',
+      title: isPtBr ? 'Certificados de participaÃ§Ã£o' : 'Participation certificates',
+      lines: isPtBr ? ['Visualize e imprima certificados jÃ¡ emitidos na pÃ¡gina Certificados.', 'Para emitir outro certificado, acesse o evento encerrado.', 'Preencha o nome completo no perfil: ele serÃ¡ usado no certificado e hÃ¡ um cÃ³digo/link pÃºblico para validaÃ§Ã£o.'] : ['View and print issued certificates on the Certificates page.', 'To issue another certificate, open the finished event.', 'Fill in your full name in Profile: it is used on the certificate, which includes a public validation code/link.'],
+    },
     {
       key: 'comp_start_here',
       title: isPtBr ? 'Comece por aqui' : 'Start here',
@@ -437,7 +473,7 @@ export default function DashboardPage() {
 
           <div className="cyber-card mt-6">
             <h3 className="text-lg font-bold text-cyber-purple mb-4 flex items-center gap-2">
-              <BookOpen size={20} /> Writeups pendentes ({pendingWriteups.length})
+              <BookOpen size={20} /> Writeups recebidas ({pendingWriteups.length})
             </h3>
             <div className="flex gap-2 mb-4">
               {(['pending', 'approved', 'rejected'] as const).map(filter => <button key={filter} onClick={() => setWriteupFilter(filter)} className={`px-3 py-1 rounded text-xs ${writeupFilter === filter ? 'bg-cyber-purple/30 text-cyber-purple-light' : 'bg-white/5 text-gray-500'}`}>{filter === 'pending' ? 'Pendentes' : filter === 'approved' ? 'Aprovadas' : 'Rejeitadas'}</button>)}

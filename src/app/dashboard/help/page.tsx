@@ -355,6 +355,14 @@ const sections: Section[] = [
       'Never share your credentials with anyone.',
     ],
   },
+  {
+    key: 'certificates',
+    icon: <Award className="text-amber-400" size={20} />,
+    titlePt: 'Certificados e validaÃ§Ã£o',
+    titleEn: 'Certificates and validation',
+    contentPt: ['ApÃ³s o encerramento do evento, o competidor pode emitir seu certificado na pÃ¡gina do evento.', 'O nome completo informado no Perfil Ã© usado no documento; o nickname nÃ£o Ã© utilizado.', 'O certificado informa perÃ­odo, carga horÃ¡ria, missÃµes, habilidades de cada desafio e status capturado/nÃ£o capturado.', 'A autenticidade pode ser conferida publicamente pelo cÃ³digo alfanumÃ©rico de 8 caracteres ou pelo link impresso.', 'Instrutores, Admins e Super Admins gerenciam emissÃµes em Certificados; participantes visualizam e imprimem seus documentos.'],
+    contentEn: ['After an event ends, competitors can issue their certificate from the event page.', 'The full name entered in Profile is used on the document; the nickname is not used.', 'The certificate includes the event period, workload, missions, challenge skills, and captured/not captured status.', 'Authenticity can be checked publicly using the 8-character alphanumeric code or printed link.', 'Instructors, Admins, and Super Admins manage issuances in Certificates; competitors view and print their documents.'],
+  },
 ];
 
 export default function HelpPage() {

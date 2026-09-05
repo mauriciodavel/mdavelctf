@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
-import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb, Clock, RefreshCw } from 'lucide-react';
+import { Trophy, Medal, Target, Users, Filter, ChevronDown, Crown, Zap, Award, Lightbulb, Clock, RefreshCw, Download, FileText } from 'lucide-react';
 
 interface ScoreEntry {
   position: number;
@@ -19,6 +19,14 @@ interface ScoreEntry {
   hintCount: number;
   lastSolveTime: string | null;
 }
+
+interface CategoryStat {
+  name: string;
+  solved: number;
+  attempts: number;
+}
+
+interface ActivityStat { label: string; count: number; }
 
 export default function ScoreboardPage() {
   const { profile } = useAuth();
@@ -37,6 +45,9 @@ export default function ScoreboardPage() {
   const [filterLeague, setFilterLeague] = useState<string>('all');
   const [filterClass, setFilterClass] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
+  const [activityStats, setActivityStats] = useState<ActivityStat[]>([]);
+  const [firstBloods, setFirstBloods] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,11 +144,11 @@ export default function ScoreboardPage() {
       let challengeQuery;
       if (filterEvent !== 'all') {
         challengeQuery = supabase.from('challenges')
-          .select('id, points, mission_id, missions!inner(event_id)')
+          .select('id, points, category, mission_id, missions!inner(event_id)')
           .eq('missions.event_id', filterEvent);
       } else {
         challengeQuery = supabase.from('challenges')
-          .select('id, points, mission_id, missions(event_id)');
+          .select('id, points, category, mission_id, missions(event_id)');
       }
 
       const { data: challengeData } = await challengeQuery;
@@ -171,7 +182,7 @@ export default function ScoreboardPage() {
       const totalChallenges = relevantChallengeIds.length;
 
       if (relevantChallengeIds.length === 0) {
-        if (!cancelled) setEntries([]);
+        if (!cancelled) { setEntries([]); setCategoryStats([]); setActivityStats([]); setFirstBloods(0); }
         return;
       }
 
@@ -185,6 +196,32 @@ export default function ScoreboardPage() {
           .in('challenge_id', batch);
         allSubmissions = allSubmissions.concat(data || []);
       }
+
+      // Analytics used by the visual summary below. Categories are optional so
+      // older challenges remain grouped under "Sem categoria".
+      const challengeCategory: Record<string, string> = {};
+      filteredChallenges.forEach((challenge: any) => {
+        challengeCategory[challenge.id] = challenge.category || 'Sem categoria';
+      });
+      const categoryMap: Record<string, CategoryStat> = {};
+      allSubmissions.forEach((submission: any) => {
+        const name = challengeCategory[submission.challenge_id] || 'Sem categoria';
+        if (!categoryMap[name]) categoryMap[name] = { name, solved: 0, attempts: 0 };
+        categoryMap[name].attempts += 1;
+        if (submission.is_correct) categoryMap[name].solved += 1;
+      });
+      if (!cancelled) setCategoryStats(Object.values(categoryMap).sort((a, b) => b.solved - a.solved));
+      const activityMap: Record<string, number> = {};
+      allSubmissions.forEach((submission: any) => {
+        const date = submission.submitted_at ? new Date(submission.submitted_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—';
+        activityMap[date] = (activityMap[date] || 0) + 1;
+      });
+      const activity = Object.entries(activityMap).slice(-14).map(([label, count]) => ({ label, count }));
+      const firstBloodChallengeIds = new Set<string>();
+      [...allSubmissions].sort((a, b) => String(a.submitted_at || '').localeCompare(String(b.submitted_at || ''))).forEach((submission: any) => {
+        if (submission.is_correct && !firstBloodChallengeIds.has(submission.challenge_id)) firstBloodChallengeIds.add(submission.challenge_id);
+      });
+      if (!cancelled) { setActivityStats(activity); setFirstBloods(firstBloodChallengeIds.size); }
 
       // Step 3: Get hint usage for ranking (fewer hints = better rank)
       let allHintIds: string[] = [];
@@ -356,6 +393,55 @@ export default function ScoreboardPage() {
     return 'text-gray-500';
   };
 
+  const formatLastSolve = (value: string | null) => value
+    ? new Date(value).toLocaleString('pt-BR')
+    : '—';
+
+  const csvValue = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+  const exportCsv = () => {
+    const headers = filterMode === 'individual'
+      ? ['Posição', 'Competidor', 'Nível', 'Desafios resolvidos', 'Total de desafios', 'Pontuação', 'Dicas', 'Precisão', 'Última captura']
+      : ['Posição', 'Equipe', 'Desafios resolvidos', 'Total de desafios', 'Pontuação', 'Dicas', 'Precisão', 'Última captura'];
+    const rows = entries.map((entry) => filterMode === 'individual'
+      ? [entry.position, entry.name, entry.level, entry.correct, entry.totalChallenges, entry.score, entry.hintCount, `${entry.accuracy}%`, formatLastSolve(entry.lastSolveTime)]
+      : [entry.position, entry.name, entry.correct, entry.totalChallenges, entry.score, entry.hintCount, `${entry.accuracy}%`, formatLastSolve(entry.lastSolveTime)]);
+    const csv = '\ufeff' + [headers, ...rows].map(row => row.map(csvValue).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `placar-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const escapeHtml = (value: unknown) => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
+  const exportPdf = () => {
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) return;
+    const title = filterMode === 'individual' ? 'Relatório de competidores' : 'Relatório de equipes';
+    const headers = filterMode === 'individual'
+      ? ['#', 'Competidor', 'Nível', 'Progresso', 'Pontos', 'Dicas', 'Precisão', 'Última captura']
+      : ['#', 'Equipe', 'Progresso', 'Pontos', 'Dicas', 'Precisão', 'Última captura'];
+    const body = entries.map(entry => {
+      const cells = filterMode === 'individual'
+        ? [entry.position, entry.name, entry.level, `${entry.correct}/${entry.totalChallenges}`, entry.score, entry.hintCount, `${entry.accuracy}%`, formatLastSolve(entry.lastSolveTime)]
+        : [entry.position, entry.name, `${entry.correct}/${entry.totalChallenges}`, entry.score, entry.hintCount, `${entry.accuracy}%`, formatLastSolve(entry.lastSolveTime)];
+      return `<tr>${cells.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`;
+    }).join('');
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+      *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;padding:28px}h1{margin:0 0 6px;font-size:22px}p{margin:0 0 20px;color:#5b6472;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #d9dee8;padding:8px;text-align:left}th{background:#eef2f7;font-weight:700}tr:nth-child(even){background:#fafbfc}@media print{body{padding:0}}
+    </style></head><body><h1>${escapeHtml(title)}</h1><p>Gerado em ${escapeHtml(new Date().toLocaleString('pt-BR'))} · ${entries.length} registros</p><table><thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${body || '<tr><td colspan="8">Nenhum registro encontrado.</td></tr>'}</tbody></table></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+  };
+
   const getPositionIcon = (pos: number) => {
     if (pos === 1) return <Crown className="text-amber-400" size={20} />;
     if (pos === 2) return <Medal className="text-gray-300" size={20} />;
@@ -364,6 +450,22 @@ export default function ScoreboardPage() {
   };
 
   const myEntry = entries.find(e => e.id === profile?.id);
+  const canViewGlobalAnalytics = ['super_admin', 'admin', 'instructor'].includes(profile?.role || '');
+  const chartEntries = canViewGlobalAnalytics ? entries : (myEntry ? [myEntry] : []);
+  const maxScore = Math.max(...chartEntries.map(e => e.score), 1);
+  const maxSolved = Math.max(...categoryStats.map(c => c.solved), 1);
+  const totalSolved = chartEntries.reduce((sum, e) => sum + e.correct, 0);
+  const averageAccuracy = chartEntries.length
+    ? Math.round(chartEntries.reduce((sum, e) => sum + e.accuracy, 0) / chartEntries.length)
+    : 0;
+  const maxActivity = Math.max(...activityStats.map(item => item.count), 1);
+  const accuracyBuckets = [
+    { label: '0–24%', count: chartEntries.filter(e => e.accuracy < 25).length, color: 'bg-red-400' },
+    { label: '25–49%', count: chartEntries.filter(e => e.accuracy >= 25 && e.accuracy < 50).length, color: 'bg-orange-400' },
+    { label: '50–74%', count: chartEntries.filter(e => e.accuracy >= 50 && e.accuracy < 75).length, color: 'bg-amber-400' },
+    { label: '75–100%', count: chartEntries.filter(e => e.accuracy >= 75).length, color: 'bg-cyber-green' },
+  ];
+  const maxBucket = Math.max(...accuracyBuckets.map(bucket => bucket.count), 1);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -382,9 +484,25 @@ export default function ScoreboardPage() {
           <span className="text-xs text-gray-600">
             {lastRefresh.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
+          <button
+            onClick={exportCsv}
+            disabled={loading || entries.length === 0}
+            title="Exportar CSV"
+            className="cyber-btn-secondary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download size={16} /> <span className="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            onClick={exportPdf}
+            disabled={loading}
+            title="Exportar PDF"
+            className="cyber-btn-secondary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <FileText size={16} /> <span className="hidden sm:inline">PDF</span>
+          </button>
           <button onClick={() => setShowFilters(!showFilters)}
             className="cyber-btn-secondary flex items-center gap-2 text-sm">
-            <Filter size={16} /> {t('scoreboard.filters')}
+            <Filter size={16} /> {t('Aplicar Filtros')}
             <ChevronDown size={14} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </button>
         </div>
@@ -395,26 +513,26 @@ export default function ScoreboardPage() {
         <div className="cyber-card space-y-4 animate-slide-in">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="cyber-label">{t('scoreboard.mode')}</label>
+              <label className="cyber-label">{t('Filtros de Placar')}</label>
               <div className="flex gap-2">
                 <button onClick={() => setFilterMode('individual')}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                     filterMode === 'individual' ? 'bg-cyber-cyan/20 text-cyber-cyan border border-cyber-cyan/40' : 'bg-white/5 text-gray-400 border border-cyber-border'
                   }`}>
-                  <Target size={14} className="inline mr-1" /> {t('scoreboard.individual')}
+                  <Target size={14} className="inline mr-1" /> {t('Individual')}
                 </button>
                 <button onClick={() => setFilterMode('team')}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
                     filterMode === 'team' ? 'bg-cyber-purple/20 text-cyber-purple border border-cyber-purple/40' : 'bg-white/5 text-gray-400 border border-cyber-border'
                   }`}>
-                  <Users size={14} className="inline mr-1" /> {t('scoreboard.teams')}
+                  <Users size={14} className="inline mr-1" /> {t('Equipe')}
                 </button>
               </div>
             </div>
             <div>
-              <label className="cyber-label">{t('scoreboard.event')}</label>
+              <label className="cyber-label">{t('Evento')}</label>
               <select value={filterEvent} onChange={(e) => setFilterEvent(e.target.value)} className="cyber-select">
-                <option value="all">{t('scoreboard.all_events')}</option>
+                <option value="all">{t('Todos os Eventos')}</option>
                 {events.map(ev => {
                   const status = getEventStatus(ev);
                   return (
@@ -478,10 +596,79 @@ export default function ScoreboardPage() {
 
       {/* Ranking Criteria Info */}
       <div className="cyber-card bg-cyber-darker/50 border-cyber-border/50 py-3 px-4">
-        <p className="text-xs text-gray-400 text-center">
+        <p className="text-xs text-gray-400 text-center whitespace-pre-line leading-relaxed">
           {t('score.ranking_criteria')}
         </p>
       </div>
+
+      {/* Visual analytics. Global charts are restricted to organizers; competitors see only their own metrics. */}
+      <section className="space-y-4" aria-label="Análises do placar">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            ['Participantes', canViewGlobalAnalytics ? entries.length : (myEntry ? 1 : 0), 'text-cyber-cyan'],
+            ['Flags capturadas', totalSolved, 'text-cyber-green'],
+            ['Pontuação máxima', canViewGlobalAnalytics ? Math.max(...entries.map(e => e.score), 0) : (myEntry?.score || 0), 'text-amber-400'],
+            ['Precisão média', `${averageAccuracy}%`, 'text-cyber-purple'],
+          ].map(([label, value, color]) => (
+            <div key={String(label)} className="cyber-card py-3 px-4">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">{label}</p>
+              <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="cyber-card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white">Pontuação por participante</h2>
+              <span className="text-[10px] text-gray-500">maiores pontuações</span>
+            </div>
+            <div className="space-y-3">
+              {chartEntries.slice(0, 8).map(entry => (
+                <div key={entry.id}>
+                  <div className="flex justify-between text-xs mb-1 gap-2"><span className="text-gray-300 truncate">{entry.name}</span><span className="text-cyber-cyan">{entry.score}</span></div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-cyber-cyan to-cyber-purple" style={{ width: `${Math.max((entry.score / maxScore) * 100, entry.score ? 3 : 0)}%` }} /></div>
+                </div>
+              ))}
+              {chartEntries.length === 0 && <p className="text-sm text-gray-500">Sem dados para o filtro atual.</p>}
+            </div>
+          </div>
+          <div className="cyber-card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white">Desafios por categoria</h2>
+              <span className="text-[10px] text-gray-500">flags capturadas</span>
+            </div>
+            <div className="space-y-3">
+              {categoryStats.slice(0, 8).map(category => (
+                <div key={category.name}>
+                  <div className="flex justify-between text-xs mb-1 gap-2"><span className="text-gray-300 truncate">{category.name}</span><span className="text-cyber-green">{category.solved} / {category.attempts}</span></div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full bg-cyber-green" style={{ width: `${(category.solved / maxSolved) * 100}%` }} /></div>
+                </div>
+              ))}
+              {categoryStats.length === 0 && <p className="text-sm text-gray-500">Sem submissões para o filtro atual.</p>}
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="cyber-card lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white">Atividade ao longo do tempo</h2>
+              <span className="text-[10px] text-gray-500">submissões por dia</span>
+            </div>
+            <div className="h-32 flex items-end gap-2 overflow-x-auto pb-5">
+              {activityStats.map(item => <div key={item.label} className="min-w-8 flex-1 h-full flex flex-col justify-end items-center gap-1"><span className="text-[9px] text-gray-400">{item.count}</span><div className="w-full max-w-10 rounded-t bg-cyber-cyan/80" style={{ height: `${Math.max((item.count / maxActivity) * 100, 4)}%` }} /><span className="text-[9px] text-gray-500 whitespace-nowrap">{item.label}</span></div>)}
+              {activityStats.length === 0 && <p className="text-sm text-gray-500 self-center">Sem atividade para o filtro atual.</p>}
+            </div>
+          </div>
+          <div className="cyber-card">
+            <div className="flex items-center justify-between mb-4"><h2 className="font-semibold text-white">First Blood</h2><Trophy size={16} className="text-amber-400" /></div>
+            <p className="text-3xl font-bold text-amber-400">{firstBloods}</p><p className="text-xs text-gray-500 mt-1">desafios com primeira captura registrada</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="cyber-card"><h2 className="font-semibold text-white mb-4">Distribuição de precisão</h2><div className="space-y-3">{accuracyBuckets.map(bucket => <div key={bucket.label}><div className="flex justify-between text-xs mb-1"><span className="text-gray-300">{bucket.label}</span><span className="text-gray-500">{bucket.count}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className={`h-full rounded-full ${bucket.color}`} style={{ width: `${Math.max((bucket.count / maxBucket) * 100, bucket.count ? 4 : 0)}%` }} /></div></div>)}</div></div>
+          <div className="cyber-card"><h2 className="font-semibold text-white mb-4">Progresso de conclusão</h2><div className="space-y-3">{chartEntries.slice(0, 6).map(entry => <div key={entry.id}><div className="flex justify-between text-xs mb-1"><span className="text-gray-300 truncate mr-2">{entry.name}</span><span className="text-cyber-purple">{entry.correct}/{entry.totalChallenges}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full rounded-full bg-cyber-purple" style={{ width: `${entry.totalChallenges ? (entry.correct / entry.totalChallenges) * 100 : 0}%` }} /></div></div>)}{chartEntries.length === 0 && <p className="text-sm text-gray-500">Sem dados para o filtro atual.</p>}</div></div>
+        </div>
+      </section>
 
       {/* Scoreboard Table */}
       <div className="cyber-card overflow-hidden p-0">

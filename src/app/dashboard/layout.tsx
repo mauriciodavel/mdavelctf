@@ -40,6 +40,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!profile?.id) return;
     const loadNotifications = async () => {
       const role = String(profile.role || '').trim().toLowerCase();
+      const { data: persistent } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50);
+      if (persistent?.length) {
+        setNotifications(persistent);
+        setUnreadNotifications(persistent.filter((n: any) => !n.read_at).length);
+      }
       let writeupQuery = supabase.from('writeups').select('id,status,created_at,reviewed_at,challenge_id,user_id').order('created_at', { ascending: false }).limit(50);
       if (role === 'competitor') writeupQuery = writeupQuery.eq('user_id', profile.id);
       else if (role === 'instructor') {
@@ -57,9 +62,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const mm = Object.fromEntries((missions || []).map((m: any) => [m.id, m]));
       const em = Object.fromEntries((events || []).map((e: any) => [e.id, e]));
       const enriched = rows.map((w: any) => ({ ...w, challenge: cm[w.challenge_id], mission: mm[cm[w.challenge_id]?.mission_id], event: em[mm[cm[w.challenge_id]?.mission_id]?.event_id] }));
-      setNotifications(enriched);
-      const seen = JSON.parse(localStorage.getItem('mdavelctf_seen_notifications') || '[]');
-      setUnreadNotifications(enriched.filter((n: any) => !seen.includes(`${n.id}-${n.status}`)).length);
+      const persistentRows = (persistent || []).map((n: any) => ({ ...n, challenge: cm[n.metadata?.challenge_id], mission: mm[cm[n.metadata?.challenge_id]?.mission_id], event: em[n.event_id] }));
+      const combined = persistentRows.length ? persistentRows : enriched;
+      setNotifications(combined);
+      setUnreadNotifications(combined.filter((n: any) => !n.read_at).length);
     };
     loadNotifications();
   }, [profile?.id, notificationRefresh]);
@@ -69,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const channel = supabase.channel(`user-notifications-${profile.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'writeups' }, () => {
         setNotificationRefresh(value => value + 1);
-      }).subscribe();
+      }).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => setNotificationRefresh(value => value + 1)).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id]);
 
@@ -332,6 +338,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: '/dashboard/classes', label: t('nav.classes'), icon: GraduationCap, show: true },
     { href: '/dashboard/teams', label: t('nav.teams'), icon: Users, show: true },
     { href: '/dashboard/scoreboard', label: t('nav.scoreboard'), icon: Swords, show: true },
+    { href: '/dashboard/certificates', label: 'Certificados', icon: Award, show: true },
     { href: '/dashboard/badges', label: t('nav.badges'), icon: Award, show: true },
     { href: '/dashboard/profile', label: t('nav.profile'), icon: User, show: true },
     { href: '/dashboard/admin', label: t('nav.admin'), icon: Settings, show: isAdmin },
@@ -386,10 +393,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-3">
             {/* Language Toggle */}
             <div className="relative">
-              <button onClick={() => { const seen = notifications.map((n: any) => n.id); localStorage.setItem('mdavelctf_seen_notifications', JSON.stringify(seen)); setUnreadNotifications(0); setNotificationsOpen(!notificationsOpen); }} className="relative p-2 rounded-lg bg-white/5 border border-cyber-border text-gray-400 hover:text-white" title="Notificações">
+              <button onClick={async () => { const ownIds = notifications.filter((n: any) => n.recipient_id === profile.id && !n.read_at).map((n: any) => n.id); if (ownIds.length) { const now = new Date().toISOString(); await supabase.from('notifications').update({ read_at: now }).in('id', ownIds); setNotifications(prev => prev.map((n: any) => ownIds.includes(n.id) ? { ...n, read_at: now } : n)); } const seen = notifications.map((n: any) => n.id); localStorage.setItem('mdavelctf_seen_notifications', JSON.stringify(seen)); setUnreadNotifications(0); setNotificationsOpen(!notificationsOpen); }} className="relative p-2 rounded-lg bg-white/5 border border-cyber-border text-gray-400 hover:text-white" title="Notificações">
                 <Bell size={17} />{unreadNotifications > 0 && <span className="absolute -right-1 -top-1 min-w-4 h-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center">{unreadNotifications}</span>}
               </button>
-              {notificationsOpen && <div className="absolute right-0 top-11 z-50 w-96 rounded-xl border border-cyber-border bg-cyber-card shadow-2xl p-3"><p className="text-sm font-semibold text-cyber-cyan mb-2">Notificações</p>{notifications.length === 0 ? <p className="text-xs text-gray-500">Nenhuma notificação.</p> : notifications.map((n: any) => <div key={n.id} className="text-xs text-gray-300 py-2 border-b border-cyber-border"><strong>Writeup {n.status === 'approved' ? 'aprovado' : n.status === 'rejected' ? 'rejeitado' : 'pendente para revisão'}</strong><br />Evento: {n.event?.name || '—'}<br />Missão: {n.mission?.name || '—'}<br />Flag #{n.challenge?.sequence_number || '—'}: {n.challenge?.title || '—'}<br /><span className="text-gray-500">{new Date(n.reviewed_at || n.created_at).toLocaleString('pt-BR')}</span></div>)}</div>}
+              {notificationsOpen && <div className="fixed inset-x-2 top-20 z-50 w-auto max-w-none sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-96 sm:max-w-[calc(100vw-1rem)] rounded-xl border border-cyber-border bg-cyber-card shadow-2xl p-3"><p className="text-sm font-semibold text-cyber-cyan mb-2">Notificações</p>{notifications.length === 0 ? <p className="text-xs text-gray-500">Nenhuma notificação.</p> : notifications.map((n: any) => <div key={n.id} className="text-xs text-gray-300 py-2 border-b border-cyber-border"><strong>Writeup {n.status === 'approved' ? 'aprovado' : n.status === 'rejected' ? 'rejeitado' : 'pendente para revisão'}</strong><br />Evento: {n.event?.name || '—'}<br />Missão: {n.mission?.name || '—'}<br />Flag #{n.challenge?.sequence_number || '—'}: {n.challenge?.title || '—'}<br /><span className="text-gray-500">{new Date(n.reviewed_at || n.created_at).toLocaleString('pt-BR')}</span></div>)}</div>}
             </div>
             <button
               onClick={toggleLocale}
@@ -541,3 +548,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+
+
+
+
+
