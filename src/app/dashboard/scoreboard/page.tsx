@@ -572,22 +572,22 @@ export default function ScoreboardPage() {
             <div className="flex items-center gap-4">
               {getPositionIcon(myEntry.position)}
               <div>
-                <p className="font-bold text-white">{t('scoreboard.your_position')}</p>
+                <p className="font-bold text-white">{t('Sua Posição no Placar')}</p>
                 <p className="text-sm text-gray-400">#{myEntry.position} de {entries.length}</p>
               </div>
             </div>
             <div className="flex items-center gap-6 text-sm">
               <div className="text-center">
                 <p className="text-cyber-cyan font-bold text-lg">{myEntry.score}</p>
-                <p className="text-gray-500 text-xs">{t('scoreboard.score')}</p>
+                <p className="text-gray-500 text-xs">{t('Pontuação')}</p>
               </div>
               <div className="text-center">
                 <p className="text-cyber-green font-bold text-lg">{myEntry.accuracy}%</p>
-                <p className="text-gray-500 text-xs">{t('scoreboard.accuracy')}</p>
+                <p className="text-gray-500 text-xs">{t('Precisão')}</p>
               </div>
               <div className="text-center">
                 <p className="text-yellow-400 font-bold text-lg">{myEntry.hintCount}</p>
-                <p className="text-gray-500 text-xs">Dicas</p>
+                <p className="text-gray-500 text-xs">{t('Dicas')}</p>
               </div>
             </div>
           </div>
@@ -677,16 +677,16 @@ export default function ScoreboardPage() {
             <thead>
               <tr className="border-b border-cyber-border text-left">
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase w-16">#</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">{filterMode === 'individual' ? t('scoreboard.player') : t('scoreboard.team')}</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">{filterMode === 'individual' ? t('Competidor') : t('scoreboard.team')}</th>
                 {filterMode === 'individual' && <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">Nível</th>}
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('scoreboard.progress')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('scoreboard.score')}</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('Progresso')}</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('Pontuação')}</th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">
                   <Lightbulb size={14} className="inline mr-1 text-yellow-400" />Dicas
                 </th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('scoreboard.accuracy')}</th>
+                <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">{t('Precisão')}</th>
                 <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-center">
-                  <Clock size={14} className="inline mr-1 text-cyber-cyan" />{t('score.last_flag')}
+                  <Clock size={14} className="inline mr-1 text-cyber-cyan" />{t('Última Bandeira')}
                 </th>
               </tr>
             </thead>

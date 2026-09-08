@@ -190,7 +190,7 @@ export default function ProfilePage() {
         <div className="mt-6">
           <div className="flex items-center justify-between text-sm mb-2">
             <span className="text-cyber-cyan font-semibold flex items-center gap-1">
-              <Zap size={14} /> {t('profile.level')} {profile.level}
+              <Zap size={14} /> {t('Nível')} {profile.level}
             </span>
             <span className="text-gray-500">{profile.xp_points} / {xp.needed} XP</span>
           </div>
@@ -305,29 +305,29 @@ export default function ProfilePage() {
         <div className="cyber-card text-center">
           <Target className="mx-auto text-cyber-cyan mb-2" size={24} />
           <p className="text-2xl font-bold text-white">{stats.totalSubmissions}</p>
-          <p className="text-xs text-gray-500">{t('profile.total_submissions')}</p>
+          <p className="text-xs text-gray-500">{t('Total de Submissões')}</p>
         </div>
         <div className="cyber-card text-center">
           <CheckCircle className="mx-auto text-cyber-green mb-2" size={24} />
           <p className="text-2xl font-bold text-cyber-green">{stats.correct}</p>
-          <p className="text-xs text-gray-500">{t('profile.correct')}</p>
+          <p className="text-xs text-gray-500">{t('Submissões corretas')}</p>
         </div>
         <div className="cyber-card text-center">
           <XCircle className="mx-auto text-red-400 mb-2" size={24} />
           <p className="text-2xl font-bold text-red-400">{stats.wrong}</p>
-          <p className="text-xs text-gray-500">{t('profile.wrong')}</p>
+          <p className="text-xs text-gray-500">{t('Submissões incorretas')}</p>
         </div>
         <div className="cyber-card text-center">
           <Trophy className="mx-auto text-amber-400 mb-2" size={24} />
           <p className="text-2xl font-bold text-amber-400">{stats.totalPoints}</p>
-          <p className="text-xs text-gray-500">{t('profile.points_earned')}</p>
+          <p className="text-xs text-gray-500">{t('Pontos Obtidos')}</p>
         </div>
       </div>
 
       {/* Accuracy */}
       <div className="cyber-card">
         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <PieChart className="text-cyber-purple" size={20} /> {t('profile.accuracy')}
+          <PieChart className="text-cyber-purple" size={20} /> {t('Nível de Precisão do Perfil')}
         </h3>
         <div className="flex items-center gap-6">
           <div className="relative w-24 h-24">
@@ -344,7 +344,7 @@ export default function ProfilePage() {
             <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-white">{accuracy}%</span>
           </div>
           <div className="text-sm text-gray-400">
-            <p>{stats.correct} {t('profile.correct').toLowerCase()} de {stats.totalSubmissions} {t('profile.total_submissions').toLowerCase()}</p>
+            <p>{stats.correct} {t('corretas').toLowerCase()} de {stats.totalSubmissions} {t('Total de Submissões do Perfil').toLowerCase()}</p>
           </div>
         </div>
       </div>
@@ -353,7 +353,7 @@ export default function ProfilePage() {
       {Object.keys(stats.byCategory).length > 0 && (
         <div className="cyber-card">
           <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <BarChart3 className="text-cyber-green" size={20} /> {t('profile.by_category')}
+            <BarChart3 className="text-cyber-green" size={20} /> {t('Perfil por Categoria')}
           </h3>
           <div className="space-y-3">
             {Object.entries(stats.byCategory).map(([cat, data]) => {
@@ -381,7 +381,7 @@ export default function ProfilePage() {
           <Award className="text-amber-400" size={20} /> {t('profile.badges')} ({badges.length})
         </h3>
         {badges.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">{t('profile.no_badges')}</p>
+          <p className="text-gray-500 text-center py-4">{t('Perfil sem distintivos')}</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {badges.map((badge: any) => (

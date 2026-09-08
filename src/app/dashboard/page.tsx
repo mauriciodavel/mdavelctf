@@ -172,7 +172,8 @@ export default function DashboardPage() {
         const { data: ms } = cs?.length ? await supabase.from('missions').select('id,name,event_id').in('id', cs.map((c: any) => c.mission_id)) : { data: [] };
         const { data: es } = ms?.length ? await supabase.from('events').select('id,name').in('id', ms.map((m: any) => m.event_id)) : { data: [] };
         const cm = Object.fromEntries((cs || []).map((c: any) => [c.id, c])); const mm = Object.fromEntries((ms || []).map((m: any) => [m.id, m])); const em = Object.fromEntries((es || []).map((e: any) => [e.id, e]));
-        activity = [...(ownWriteups || []).map((w: any) => ({ ...w, challenges: cm[w.challenge_id], missions: mm[cm[w.challenge_id]?.mission_id], events: em[mm[cm[w.challenge_id]?.mission_id]?.event_id], id: `writeup-${w.id}-${w.status}`, is_writeup: true, submitted_at: w.created_at, writeup_status: w.status })), ...activity].slice(0, 20);
+        const { data: history } = ids.length ? await supabase.from('writeup_history').select('*').eq('user_id', profile.id).in('challenge_id', ids).order('occurred_at', { ascending: false }) : { data: [] };
+        activity = [...(history || []).map((w: any) => ({ ...w, challenges: cm[w.challenge_id], missions: mm[cm[w.challenge_id]?.mission_id], events: em[mm[cm[w.challenge_id]?.mission_id]?.event_id], id: `writeup-history-${w.id}`, is_writeup: true, submitted_at: w.occurred_at, writeup_status: w.status })), ...activity];
       }
       if (role === 'instructor' || role === 'admin' || role === 'super_admin') {
         let writeupQuery = supabase.from('writeups').select('*').order('created_at', { ascending: false }).limit(50);
@@ -190,11 +191,18 @@ export default function DashboardPage() {
         const { data: challengeRows } = challengeIdsForWriteups.length ? await supabase.from('challenges').select('id,sequence_number,title').in('id', challengeIdsForWriteups) : { data: [] };
         const challengeMap = Object.fromEntries((challengeRows || []).map((c: any) => [c.id, c]));
         const writerMap = Object.fromEntries((writers || []).map((p: any) => [p.id, p.display_name]));
-        const enriched = (writeups || []).map((w: any) => ({ ...w, profiles: { display_name: writerMap[w.user_id] || 'Usuário' }, challenges: challengeMap[w.challenge_id], id: `writeup-${w.id}-${w.status}`, writeup_id: w.id, is_writeup: true, submitted_at: w.created_at, writeup_status: w.status }));
-        if (!cancelled) setPendingWriteups(enriched);
-        activity = [...enriched, ...activity].slice(0, 20);
+        const enriched = (writeups || []).map((w: any) => ({ ...w, profiles: { display_name: writerMap[w.user_id] || 'Usuário' }, challenges: challengeMap[w.challenge_id], id: `writeup-${w.id}-${w.status}`, writeup_id: w.id, is_writeup: true, submitted_at: w.reviewed_at || w.created_at, writeup_status: w.status }));
+        const { data: history } = challengeIdsForWriteups.length ? await supabase.from('writeup_history').select('*').in('challenge_id', challengeIdsForWriteups).order('occurred_at', { ascending: false }).limit(100) : { data: [] };
+        const latestHistoryIds = new Set<string>();
+        (history || []).forEach((item: any) => { if (!latestHistoryIds.has(item.writeup_id)) latestHistoryIds.add(item.writeup_id); });
+        const historyEnriched = (history || []).map((item: any) => ({ ...item, profiles: { display_name: writerMap[item.user_id] || 'Usuário' }, challenges: challengeMap[item.challenge_id], id: `writeup-history-${item.id}`, writeup_id: item.writeup_id, is_writeup: true, is_current: latestHistoryIds.has(item.writeup_id) && item.id === (history || []).find((row: any) => row.writeup_id === item.writeup_id)?.id, submitted_at: item.occurred_at, writeup_status: item.status }));
+        if (!cancelled) setPendingWriteups(historyEnriched.length ? historyEnriched : enriched);
+        activity = [...historyEnriched, ...activity];
       }
-      if (!cancelled) setRecentActivity(activity);
+      // The feed is chronological regardless of activity type. Writeups,
+      // submissions, broadcasts and First Blood must share the same ordering.
+      activity.sort((a: any, b: any) => new Date(b.submitted_at || b.created_at || b.reviewed_at || 0).getTime() - new Date(a.submitted_at || a.created_at || a.reviewed_at || 0).getTime());
+      if (!cancelled) setRecentActivity(activity.slice(0, 20));
     } catch (err) {
       console.error('Recent activity error:', err);
     }
@@ -207,8 +215,15 @@ export default function DashboardPage() {
   const isPtBr = locale === 'pt-BR';
 
   const reviewWriteup = async (id: string, status: 'approved' | 'rejected') => {
-    const { error } = await supabase.rpc('review_writeup', { p_writeup_id: id, p_status: status });
+    const { data: reviewed, error } = await supabase.rpc('review_writeup', { p_writeup_id: id, p_status: status });
     if (error) { toast.error(error.message); return; }
+    // Keep the decision visible immediately in the organizer feed. The
+    // realtime callback/reload will enrich it with challenge and event data.
+    if (reviewed) {
+      const previous = pendingWriteups.find((item: any) => item.writeup_id === id);
+      const feedItem = { ...(previous || {}), ...reviewed, id: `writeup-${id}-${status}`, writeup_id: id, is_writeup: true, submitted_at: reviewed.reviewed_at || new Date().toISOString(), writeup_status: status };
+      setRecentActivity(current => [feedItem, ...current].sort((a: any, b: any) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()).slice(0, 20));
+    }
     toast.success(status === 'approved' ? 'Writeup aprovado e pontuação concedida' : 'Writeup rejeitado');
     await loadDashboardData(false);
   };
@@ -428,7 +443,7 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <span className="text-xs text-gray-600 whitespace-nowrap">
-                        {new Date(item.submitted_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(item.submitted_at).toLocaleDateString('pt-BR')} {new Date(item.submitted_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   ))
@@ -478,13 +493,13 @@ export default function DashboardPage() {
             <div className="flex gap-2 mb-4">
               {(['pending', 'approved', 'rejected'] as const).map(filter => <button key={filter} onClick={() => setWriteupFilter(filter)} className={`px-3 py-1 rounded text-xs ${writeupFilter === filter ? 'bg-cyber-purple/30 text-cyber-purple-light' : 'bg-white/5 text-gray-500'}`}>{filter === 'pending' ? 'Pendentes' : filter === 'approved' ? 'Aprovadas' : 'Rejeitadas'}</button>)}
             </div>
-            {pendingWriteups.filter((w: any) => w.status === writeupFilter).length === 0 ? <p className="text-gray-500 text-sm">Nenhum writeup neste filtro.</p> : (
+              {pendingWriteups.filter((w: any) => w.status === writeupFilter && (writeupFilter !== 'pending' || w.is_current !== false)).length === 0 ? <p className="text-gray-500 text-sm">Nenhum writeup neste filtro.</p> : (
               <div className="space-y-3">
-                {pendingWriteups.filter((w: any) => w.status === writeupFilter).map((writeup: any) => (
+                {pendingWriteups.filter((w: any) => w.status === writeupFilter && (writeupFilter !== 'pending' || w.is_current !== false)).map((writeup: any) => (
                   <div key={writeup.id} className="rounded-lg bg-white/5 border border-cyber-border p-3">
                     <p className="text-xs text-gray-500 mb-2">{writeup.profiles?.display_name || 'Usuário'} · Desafio #{writeup.challenges?.sequence_number || '—'} {writeup.challenges?.title || ''} · Enviado em {new Date(writeup.created_at).toLocaleString('pt-BR')}</p>
                     <p className="text-sm text-gray-300 whitespace-pre-line max-h-24 overflow-y-auto">{writeup.content}</p>
-                    {writeup.status === 'pending' && <div className="flex justify-end gap-2 mt-3"><button onClick={() => reviewWriteup(writeup.writeup_id, 'rejected')} className="cyber-btn-secondary text-xs">Rejeitar</button><button onClick={() => reviewWriteup(writeup.writeup_id, 'approved')} className="cyber-btn-primary text-xs">Aprovar (50%)</button></div>}
+                    {writeup.status === 'pending' && writeup.is_current !== false && <div className="flex justify-end gap-2 mt-3"><button onClick={() => reviewWriteup(writeup.writeup_id, 'rejected')} className="cyber-btn-secondary text-xs">Rejeitar</button><button onClick={() => reviewWriteup(writeup.writeup_id, 'approved')} className="cyber-btn-primary text-xs">Aprovar (50%)</button></div>}
                   </div>
                 ))}
               </div>
@@ -611,6 +626,7 @@ export default function DashboardPage() {
                         {item.is_correct && (
                           <span className="text-xs text-cyber-cyan font-mono">+{item.points_awarded} pts</span>
                         )}
+                        <span className="text-xs text-gray-600 whitespace-nowrap">{new Date(item.submitted_at).toLocaleDateString('pt-BR')} {new Date(item.submitted_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     ))
                 )}

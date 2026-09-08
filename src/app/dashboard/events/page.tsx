@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase';
 import { CATEGORIES, toDirectImageUrl } from '@/lib/utils';
 import Modal from '@/components/Modal';
-import { Flag, Plus, Edit, Trash2, Copy, Search, Eye, Clock, Users, ArrowRight, Calendar, Timer, Target, Shield, Award } from 'lucide-react';
+import { Flag, Plus, Edit, Trash2, Copy, Search, Eye, Clock, Users, ArrowRight, Calendar, Timer, Target, Shield, Award, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -41,6 +41,11 @@ export default function EventsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [search, setSearch] = useState('');
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [templateCreatorNames, setTemplateCreatorNames] = useState<Record<string, string>>({});
+  const [templateToApply, setTemplateToApply] = useState<any>(null);
 
   const emptyForm = {
     name: '', description: '', start_date: '', end_date: '',
@@ -117,6 +122,7 @@ export default function EventsPage() {
       try {
         await loadEvents(cancelled);
         await loadClasses();
+        if (profile?.id) { const { data } = await supabase.from('event_templates').select('id, name, description, snapshot, created_by').order('created_at', { ascending: false }); if (!cancelled) { setTemplates(data || []); const ids = [...new Set((data || []).flatMap((item: any) => [item.created_by, item.snapshot?.event?.created_by]).filter(Boolean))]; if (ids.length) { const { data: creators } = await supabase.from('profiles').select('id, display_name').in('id', ids); const names: Record<string, string> = {}; (creators || []).forEach((creator: any) => { names[creator.id] = creator.display_name || creator.id; }); setTemplateCreatorNames(names); } } }
       } catch (err) {
         console.error('Events load error:', err);
       } finally {
@@ -126,6 +132,47 @@ export default function EventsPage() {
     load();
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  const saveAsTemplate = async (event: Event) => {
+    const { data: missions } = await supabase.from('missions').select('*').eq('event_id', event.id).order('sequence');
+    const missionIds = (missions || []).map((m: any) => m.id);
+    const { data: challenges } = missionIds.length ? await supabase.from('challenges').select('*').in('mission_id', missionIds).order('sequence_number') : { data: [] };
+    // Keep the original event creator in the snapshot for audit/details; only
+    // technical identity and timestamps are removed before reuse.
+    const snapshot = { event: { ...event, id: undefined, created_at: undefined }, missions: (missions || []).map((m: any) => ({ ...m, template_key: m.id, id: undefined, event_id: undefined })), challenges: (challenges || []).map((c: any) => ({ ...c, mission_key: c.mission_id, id: undefined, mission_id: undefined })) };
+    const { data, error } = await supabase.from('event_templates').insert({ name: event.name, description: event.description, created_by: profile?.id, snapshot }).select('id, name, description, snapshot, created_by').single();
+    if (error) toast.error(error.message); else { setTemplates(current => [data, ...current]); toast.success('Template salvo com sucesso!'); }
+  };
+
+  const createFromTemplate = async (template: any) => {
+    const source = { ...(template.snapshot?.event || {}) };
+    delete source.id; delete source.created_by; delete source.created_at; delete source.class_ids;
+    // Event codes are globally unique; a cloned event must never reuse the
+    // source code or the insert fails with events_code_key (409).
+    // events.code is CHAR(6) in the database; keep the generated code exactly
+    // six alphanumeric characters to avoid truncation/400 errors.
+    const newCode = Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, 'X');
+    delete source.code;
+    const { data: created, error } = await supabase.from('events').insert({ ...source, code: newCode, name: `${source.name || template.name} - cópia`, start_date: new Date().toISOString(), end_date: new Date(Date.now() + 86400000).toISOString(), created_by: profile?.id, updated_at: new Date().toISOString() }).select().single();
+    if (error || !created) { toast.error(error?.message || 'Não foi possível criar o evento.'); return; }
+    const missionMap: Record<string, string> = {};
+    for (const mission of (template.snapshot?.missions || [])) { const { template_key, ...missionData } = mission; const { data: copy } = await supabase.from('missions').insert({ ...missionData, event_id: created.id }).select('id').single(); if (copy) missionMap[template_key] = copy.id; }
+    for (const challenge of (template.snapshot?.challenges || [])) { const { mission_key, ...challengeData } = challenge; await supabase.from('challenges').insert({ ...challengeData, mission_id: missionMap[mission_key] }); }
+    toast.success('Evento criado a partir do template!'); await loadEvents();
+  };
+
+  const applyTemplateToForm = (template: any) => {
+    const source = template.snapshot?.event || {};
+    setEditingEvent(null);
+    setTemplateToApply(template);
+    setForm({ ...emptyForm, name: `${source.name || template.name} - cópia`, description: source.description || '', start_date: source.start_date?.slice(0, 16) || '', end_date: source.end_date?.slice(0, 16) || '', visibility: source.visibility || 'public', team_mode: source.team_mode || 'event_teams', category: source.category || emptyForm.category, custom_category: source.custom_category || '', league_code: source.league_code || '', image_url: source.image_url || '', shell_reward: source.shell_reward || 0 });
+  };
+
+  const deleteTemplate = async (id: string) => {
+    if (!window.confirm('Excluir este template?')) return;
+    const { error } = await supabase.from('event_templates').delete().eq('id', id);
+    if (error) toast.error(error.message); else { setTemplates(items => items.filter(item => item.id !== id)); if (selectedTemplate?.id === id) setSelectedTemplate(null); toast.success('Template excluído.'); }
+  };
 
   // Load stats after events are loaded
   useEffect(() => {
@@ -265,6 +312,11 @@ export default function EventsPage() {
         .insert({ ...payload, created_by: profile?.id }).select().single();
       if (error) { toast.error(error.message); return; }
       eventId = newEvent.id;
+      if (templateToApply?.snapshot) {
+        const missionMap: Record<string, string> = {};
+        for (const mission of (templateToApply.snapshot.missions || [])) { const { template_key, ...missionData } = mission; const { data: copy } = await supabase.from('missions').insert({ ...missionData, event_id: eventId }).select('id').single(); if (copy) missionMap[template_key] = copy.id; }
+        for (const challenge of (templateToApply.snapshot.challenges || [])) { const { mission_key, ...challengeData } = challenge; await supabase.from('challenges').insert({ ...challengeData, mission_id: missionMap[mission_key] }); }
+      }
       toast.success('Evento criado!');
     }
 
@@ -280,6 +332,7 @@ export default function EventsPage() {
 
     setModalOpen(false);
     setEditingEvent(null);
+    setTemplateToApply(null);
     setForm(emptyForm);
     await loadEvents();
   };
@@ -363,10 +416,10 @@ export default function EventsPage() {
               placeholder={t('common.search')} className="cyber-input pl-9 py-2 text-sm" />
           </div>
           {canManage && (
-            <button onClick={() => { setEditingEvent(null); setForm(emptyForm); setModalOpen(true); }}
-              className="cyber-btn-primary flex items-center gap-2 whitespace-nowrap">
-              <Plus size={16} /> {t('event.create')}
-            </button>
+            <div className="flex gap-2">
+              {templates.length > 0 && <button onClick={() => setTemplatesModalOpen(true)} className="cyber-btn-secondary flex items-center gap-2 text-sm whitespace-nowrap"><Layers size={15} /> Gerenciar Templates</button>}
+              <button onClick={() => { setEditingEvent(null); setTemplateToApply(null); setForm(emptyForm); setModalOpen(true); }} className="cyber-btn-primary flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> {t('event.create')}</button>
+            </div>
           )}
         </div>
       </div>
@@ -398,7 +451,7 @@ export default function EventsPage() {
                     </div>
                     <h3 className="text-lg font-bold text-white truncate">{event.name}</h3>
                   </div>
-                  {canManage && event.created_by === profile?.id && (
+                  {canManage && (profile?.role === 'super_admin' || profile?.role === 'admin' || event.created_by === profile?.id) && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => handleEdit(event)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-cyber-cyan">
                         <Edit size={16} />
@@ -481,6 +534,7 @@ export default function EventsPage() {
                       <span className="text-amber-400 font-mono">🐚 {event.shell_reward}</span>
                     )}
                   </div>
+                  {canManage && (profile?.role === 'super_admin' || profile?.role === 'admin' || event.created_by === profile?.id) && <button onClick={() => saveAsTemplate(event)} className="mt-2 text-xs text-cyber-purple-light hover:text-cyber-cyan flex items-center gap-1"><Layers size={12} /> Salvar como template</button>}
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -502,9 +556,14 @@ export default function EventsPage() {
         </div>
       )}
 
+      <Modal isOpen={templatesModalOpen} onClose={() => { setTemplatesModalOpen(false); setSelectedTemplate(null); }} title="Gerenciar Templates" size="lg">
+        {!selectedTemplate ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-cyber-border text-left"><th className="p-3">Template</th><th className="p-3">Missões</th><th className="p-3">Desafios</th><th className="p-3">Ações</th></tr></thead><tbody>{templates.map(template => <tr key={template.id} className="border-b border-cyber-border/50"><td className="p-3 text-white">{template.name}</td><td className="p-3 text-gray-400">{template.snapshot?.missions?.length || 0}</td><td className="p-3 text-gray-400">{template.snapshot?.challenges?.length || 0}</td><td className="p-3 flex gap-3"><button onClick={() => setSelectedTemplate(template)} className="text-cyber-cyan text-xs">Detalhes</button><button onClick={() => deleteTemplate(template.id)} className="text-red-400 text-xs">Excluir</button></td></tr>)}</tbody></table></div> : <div className="space-y-4"><button onClick={() => setSelectedTemplate(null)} className="text-cyber-cyan text-sm">← Voltar para templates</button><div className="cyber-card"><h3 className="text-lg font-bold text-white">{selectedTemplate.name}</h3><p className="text-sm text-gray-400 mt-2">{selectedTemplate.description || 'Sem descrição'}</p><div className="grid grid-cols-2 gap-3 mt-4 text-sm"><span>Missões: <b className="text-cyber-purple-light">{selectedTemplate.snapshot?.missions?.length || 0}</b></span><span>Desafios: <b className="text-cyber-cyan">{selectedTemplate.snapshot?.challenges?.length || 0}</b></span><span>Duração: <b>{((selectedTemplate.snapshot?.missions || []).reduce((sum: number, m: any) => sum + (Number(m.time_limit) || 0), 0) / 60).toFixed(1)}h</b></span><span>Criador do template: <b>{templateCreatorNames[selectedTemplate.created_by] || selectedTemplate.created_by || '—'}</b></span><span>Criador do evento: <b>{templateCreatorNames[selectedTemplate.snapshot?.event?.created_by] || templateCreatorNames[selectedTemplate.created_by] || selectedTemplate.created_by || '—'}</b></span></div></div></div>}
+      </Modal>
+
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
         title={editingEvent ? t('event.edit') : t('event.create')} size="lg">
         <div className="space-y-4">
+          {!editingEvent && templates.length > 0 && <div className="rounded-lg border border-cyber-purple/40 bg-cyber-purple/10 p-3"><label className="cyber-label">Começar a partir de um template (opcional)</label><select defaultValue="" onChange={e => { const template = templates.find(item => item.id === e.target.value); if (template) applyTemplateToForm(template); }} className="cyber-select"><option value="">Evento em branco</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><p className="text-xs text-gray-500 mt-1">Os dados do evento serão carregados; missões e desafios serão copiados ao salvar.</p></div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="cyber-label">{t('event.name')} *</label>

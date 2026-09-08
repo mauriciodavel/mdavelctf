@@ -42,6 +42,7 @@ export default function TeamsPage() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [joinCode, setJoinCode] = useState('');
   const [search, setSearch] = useState('');
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const profileCacheRef = useRef<Record<string, string>>({});
   const pollIntervalRef = useRef<any>(null);
@@ -230,6 +231,14 @@ export default function TeamsPage() {
       
       // Filter out teams user is already member of, store all in one state
       const otherTeams = (allTeams || []).filter((t: any) => !myTeamIds.has(t.id));
+
+      const creatorIds = [...new Set([...myTeamsData, ...otherTeams].map((team: any) => team.created_by).filter(Boolean))];
+      if (creatorIds.length > 0) {
+        const { data: creators } = await supabase.from('profiles').select('id, display_name').in('id', creatorIds);
+        const names: Record<string, string> = {};
+        (creators || []).forEach((creator: any) => { names[creator.id] = creator.display_name || creator.id; });
+        if (!cancelled) setCreatorNames(names);
+      }
       
       if (!cancelled) setTeams(otherTeams);
 
@@ -763,6 +772,9 @@ export default function TeamsPage() {
                   <Users size={14} className="text-cyber-cyan" />
                   <span>{teamMemberCounts[team.id] || 0} {t('team.members')}</span>
                 </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Criador: <span className="text-cyber-cyan">{creatorNames[team.created_by] || 'Carregando...'}</span>
+                </div>
                 <button onClick={() => { navigator.clipboard.writeText(team.code); toast.success(t('common.copied')); }}
                   className="flex items-center gap-1 text-xs font-mono text-cyber-cyan mt-2">
                   <Copy size={12} /> {team.code}
@@ -815,7 +827,7 @@ export default function TeamsPage() {
                     <span>{teamMemberCounts[team.id] || 0} {t('team.members')}</span>
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Criador: <span className="font-mono text-cyber-cyan">{team.created_by}</span>
+                    Criador: <span className="text-cyber-cyan">{creatorNames[team.created_by] || 'Carregando...'}</span>
                   </div>
                   <button onClick={() => { navigator.clipboard.writeText(team.code); toast.success(t('common.copied')); }}
                     className="flex items-center gap-1 text-xs font-mono text-cyber-cyan mt-2">
