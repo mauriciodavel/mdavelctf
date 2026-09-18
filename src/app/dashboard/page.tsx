@@ -80,8 +80,8 @@ export default function DashboardPage() {
       supabase.from('events').select('*', { count: 'exact', head: true })
         .lte('start_date', now).gte('end_date', now),
       supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('submissions').select('*', { count: 'exact', head: true }),
-      supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('is_correct', true),
+      supabase.from('submissions').select('id', { count: 'exact', head: true }),
+      supabase.from('submissions').select('id', { count: 'exact', head: true }).eq('is_correct', true),
       supabase.from('hint_usage').select('*', { count: 'exact', head: true }),
       supabase.from('leagues').select('*', { count: 'exact', head: true }),
       supabase.from('league_events').select('*', { count: 'exact', head: true }),
@@ -144,7 +144,7 @@ export default function DashboardPage() {
     try {
       const { data: recent } = await supabase
         .from('submissions')
-        .select('*, profiles(display_name), challenges(title, mission_id)')
+        .select('id,challenge_id,user_id,team_id,is_correct,points_awarded,submitted_at, profiles(display_name), challenges(title, mission_id)')
         .order('submitted_at', { ascending: false })
         .limit(10);
       let activity = recent || [];

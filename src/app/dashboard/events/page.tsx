@@ -136,7 +136,11 @@ export default function EventsPage() {
   const saveAsTemplate = async (event: Event) => {
     const { data: missions } = await supabase.from('missions').select('*').eq('event_id', event.id).order('sequence');
     const missionIds = (missions || []).map((m: any) => m.id);
-    const { data: challenges } = missionIds.length ? await supabase.from('challenges').select('*').in('mission_id', missionIds).order('sequence_number') : { data: [] };
+    const { data: challenges, error: challengesError } = missionIds.length
+      ? await supabase.rpc('get_managed_challenges', { p_mission_ids: missionIds })
+          .order('sequence_number', { ascending: true })
+      : { data: [], error: null };
+    if (challengesError) { toast.error(challengesError.message); return; }
     // Keep the original event creator in the snapshot for audit/details; only
     // technical identity and timestamps are removed before reuse.
     const snapshot = { event: { ...event, id: undefined, created_at: undefined }, missions: (missions || []).map((m: any) => ({ ...m, template_key: m.id, id: undefined, event_id: undefined })), challenges: (challenges || []).map((c: any) => ({ ...c, mission_key: c.mission_id, id: undefined, mission_id: undefined })) };

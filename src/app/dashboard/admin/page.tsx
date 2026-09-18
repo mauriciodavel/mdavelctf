@@ -227,7 +227,7 @@ async function runSeed(supabase: any, userId: string) {
       { mission_id: mission6!.id, sequence_number: 2, title: 'Strings Ocultas', description: `${SEED_TAG} Use o comando "strings" para encontrar a flag escondida em um binário.`, points: 15, flag: 'CTF{strings_command_ftw}', max_attempts: 0 },
     ];
 
-    const { data: challenges } = await supabase.from('challenges').insert(challengesData).select();
+    const { data: challenges } = await supabase.from('challenges').insert(challengesData).select('id');
     steps.push(`✅ ${challenges?.length || 0} desafios criados`);
 
     // 7. Criar Dicas (Hints)

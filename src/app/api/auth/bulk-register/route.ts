@@ -50,6 +50,28 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      if (u.group_id && !u.class_id) {
+        results.push({ email: u.email, success: false, error: 'Turma obrigatória para vincular grupo' });
+        continue;
+      }
+
+      if (u.class_id) {
+        const { data: targetClass } = await admin.from('classes')
+          .select('id, instructor_id').eq('id', u.class_id).maybeSingle();
+        if (!targetClass || (callerProfile.role === 'instructor' && targetClass.instructor_id !== callerUser.id)) {
+          results.push({ email: u.email, success: false, error: 'Turma não autorizada' });
+          continue;
+        }
+        if (u.group_id) {
+          const { data: targetGroup } = await admin.from('class_groups')
+            .select('id').eq('id', u.group_id).eq('class_id', u.class_id).maybeSingle();
+          if (!targetGroup) {
+            results.push({ email: u.email, success: false, error: 'Grupo não pertence à turma' });
+            continue;
+          }
+        }
+      }
+
       // Create auth user
       const { data, error: createError } = await admin.auth.admin.createUser({
         email: u.email.trim().toLowerCase(),

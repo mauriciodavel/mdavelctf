@@ -158,8 +158,12 @@ export default function EventDetailPage() {
     setSelectedMission(mission);
     try {
 
-    const { data: challs, error: challErr } = await supabase.from('challenges').select('*')
-      .eq('mission_id', mission.id).order('sequence_number', { ascending: true });
+    const { data: challs, error: challErr } = canManage
+      ? await supabase.rpc('get_managed_challenges', { p_mission_ids: [mission.id] })
+          .order('sequence_number', { ascending: true })
+      : await supabase.from('challenges')
+          .select('id,mission_id,sequence_number,title,description,max_attempts,points,difficulty,what_i_learned,learn_more_url,requires_completion,required_challenge_id,manual_unlock_enabled,category,tags,created_at,updated_at')
+          .eq('mission_id', mission.id).order('sequence_number', { ascending: true });
     if (challErr) console.error('Challenges query error:', challErr.message);
     setChallenges(challs || []);
 
@@ -177,7 +181,7 @@ export default function EventDetailPage() {
       setHintUsage(new Set((hu || []).map((x: any) => x.hint_id)));
 
       // Load user submissions
-      const { data: subs } = await supabase.from('submissions').select('*')
+      const { data: subs } = await supabase.from('submissions').select('id,challenge_id,user_id,team_id,is_correct,points_awarded,submitted_at')
         .in('challenge_id', challengeIds).eq('user_id', profile.id);
       setSubmissions(subs || []);
       const { data: ownWriteups } = await supabase.from('writeups').select('*').eq('user_id', profile.id).in('challenge_id', challengeIds).order('created_at', { ascending: false });
@@ -204,7 +208,7 @@ export default function EventDetailPage() {
           .from('team_members').select('user_id').eq('team_id', userTeam.id);
         const teamUserIds = (teamMembers || []).map((m: any) => m.user_id);
         if (teamUserIds.length > 0) {
-          const { data: teamSubs } = await supabase.from('submissions').select('*')
+          const { data: teamSubs } = await supabase.from('submissions').select('id,challenge_id,user_id,team_id,is_correct,points_awarded,submitted_at')
             .in('challenge_id', challengeIds)
             .in('user_id', teamUserIds)
             .eq('is_correct', true);
@@ -536,37 +540,24 @@ export default function EventDetailPage() {
       }
     }
 
-    const isCorrect = answer === challenge.flag;
-
-    // Calculate hint penalty: -10% per unlocked hint
-    let finalPoints = challenge.points;
-    if (isCorrect) {
-      const challengeHints = hints.filter((h: any) => h.challenge_id === challengeId);
-      const usedHintCount = challengeHints.filter((h: any) => hintUsage.has(h.id)).length;
-      if (usedHintCount > 0) {
-        finalPoints = Math.max(1, Math.round(challenge.points * (1 - 0.1 * usedHintCount)));
-      }
-    }
-
-    // Build submission payload — include team_id if in a team
+    // The database trigger validates the answer and calculates awarded points.
     const submissionPayload: any = {
       challenge_id: challengeId,
       user_id: profile?.id,
       answer,
-      is_correct: isCorrect,
-      points_awarded: isCorrect ? finalPoints : 0,
     };
     if (userTeam) {
       submissionPayload.team_id = userTeam.id;
     }
 
-    const { error } = await supabase.from('submissions').insert(submissionPayload);
+    const { data: submitted, error } = await supabase.from('submissions')
+      .insert(submissionPayload).select('id,is_correct,points_awarded').single();
 
     if (error) { toast.error(error.message); return; }
 
-    if (isCorrect) {
+    if (submitted?.is_correct) {
       // Tarefa 3: Fire confetti and show congratulations modal
-      setLastSolvedPoints(finalPoints);
+      setLastSolvedPoints(submitted.points_awarded || 0);
       fireConfetti();
       setShowCongrats(true);
     } else {

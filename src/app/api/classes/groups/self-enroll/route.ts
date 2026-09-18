@@ -39,6 +39,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'join') {
+      const { data: classMembership } = await admin
+        .from('class_members')
+        .select('user_id')
+        .eq('class_id', groupRow.class_id)
+        .eq('user_id', callerUser.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (!classMembership) {
+        return NextResponse.json({ error: 'Você não pertence a esta turma' }, { status: 403 });
+      }
+
       // Check if group allows self-enroll
       if (!groupRow.allow_self_enroll) {
         return NextResponse.json({ error: 'Este grupo não permite auto-inscrição' }, { status: 403 });
