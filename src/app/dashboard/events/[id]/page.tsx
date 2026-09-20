@@ -443,9 +443,8 @@ export default function EventDetailPage() {
     if (profile.shells < hint.shell_cost) {
       toast.error('Shells insuficientes!'); return;
     }
-    const { error } = await supabase.from('hint_usage').insert({ hint_id: hint.id, user_id: profile.id });
+    const { error } = await supabase.rpc('unlock_hint', { p_hint_id: hint.id });
     if (error) { toast.error(error.message); return; }
-    await supabase.from('profiles').update({ shells: profile.shells - hint.shell_cost }).eq('id', profile.id);
     setHintUsage(new Set([...hintUsage, hint.id]));
     toast.success(`Dica desbloqueada! -${hint.shell_cost} Shells 🐚`);
   };

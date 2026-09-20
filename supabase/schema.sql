@@ -547,6 +547,8 @@ CREATE TABLE IF NOT EXISTS public.badges (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   criteria_key TEXT NOT NULL UNIQUE,
+  criteria_config JSONB NOT NULL DEFAULT '{}'::JSONB
+    CHECK (jsonb_typeof(criteria_config) = 'object'),
   icon_url TEXT,
   rarity TEXT NOT NULL DEFAULT 'comum'
     CHECK (rarity IN ('comum', 'cru', 'epico', 'lendario')),

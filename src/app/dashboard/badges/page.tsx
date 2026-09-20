@@ -10,6 +10,11 @@ import { Award, Plus, Edit2, Trash2, Search, Star } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { RARITIES, RARITY_COLORS } from '@/lib/utils';
 
+const AUTOMATIC_BADGE_CRITERIA = [
+  'first_challenge',
+  'first_blood',
+] as const;
+
 export default function BadgesPage() {
   const { profile } = useAuth();
   const { t } = useI18n();
@@ -67,6 +72,7 @@ export default function BadgesPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Nome é obrigatório'); return; }
+    if (!form.criteria_key.trim()) { toast.error('Chave de critério é obrigatória'); return; }
 
     if (editingBadge) {
       const { error } = await supabase.from('badges').update(form).eq('id', editingBadge.id);
@@ -226,7 +232,13 @@ export default function BadgesPage() {
           <div>
             <label className="cyber-label">{t('badge.criteria_key')}</label>
             <input type="text" value={form.criteria_key} onChange={(e) => setForm({ ...form, criteria_key: e.target.value })}
-              className="cyber-input" placeholder="ex: first_blood, 10_challenges, etc." />
+              className="cyber-input" placeholder="ex: first_challenge ou first_blood" list="automatic-badge-criteria" />
+            <datalist id="automatic-badge-criteria">
+              {AUTOMATIC_BADGE_CRITERIA.map(criteria => <option key={criteria} value={criteria} />)}
+            </datalist>
+            <p className="mt-1 text-[11px] text-gray-500">
+              Critérios automáticos: first_challenge e first_blood. Outras chaves são apenas informativas.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

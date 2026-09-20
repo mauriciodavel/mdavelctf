@@ -275,16 +275,16 @@ async function runSeed(supabase: any, userId: string) {
 
     // 9. Criar Badges
     const badgesData = [
-      { name: 'Primeiro Sangue', criteria_key: `${SEED_TAG}_first_blood`, icon_url: null, rarity: 'epico', reward: 50, description: 'Primeiro a resolver um desafio em um evento.' },
-      { name: 'Hacker Iniciante', criteria_key: `${SEED_TAG}_beginner`, icon_url: null, rarity: 'comum', reward: 10, description: 'Resolveu seu primeiro desafio.' },
-      { name: 'Mestre Web', criteria_key: `${SEED_TAG}_web_master`, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de Web Exploitation.' },
-      { name: 'Criptógrafo', criteria_key: `${SEED_TAG}_cryptographer`, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de criptografia.' },
-      { name: 'Perito Forense', criteria_key: `${SEED_TAG}_forensics_expert`, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de forense digital.' },
-      { name: 'Sem Dicas', criteria_key: `${SEED_TAG}_no_hints`, icon_url: null, rarity: 'epico', reward: 75, description: 'Completou um evento sem usar nenhuma dica.' },
-      { name: 'Lenda do CTF', criteria_key: `${SEED_TAG}_ctf_legend`, icon_url: null, rarity: 'lendario', reward: 200, description: '1000+ pontos acumulados em competições.' },
-      { name: 'Maratonista', criteria_key: `${SEED_TAG}_marathon`, icon_url: null, rarity: 'comum', reward: 15, description: 'Participou de 5 ou mais eventos.' },
-      { name: 'Precisão Cirúrgica', criteria_key: `${SEED_TAG}_precision`, icon_url: null, rarity: 'epico', reward: 60, description: '100% de precisão em um evento com 5+ desafios.' },
-      { name: 'Líder de Equipe', criteria_key: `${SEED_TAG}_team_leader`, icon_url: null, rarity: 'comum', reward: 10, description: 'Criou uma equipe com 3+ membros.' },
+      { name: 'Primeiro Sangue', criteria_key: `${SEED_TAG}_first_blood`, criteria_config: { type: 'first_blood' }, icon_url: null, rarity: 'epico', reward: 50, description: 'Primeiro a resolver um desafio em um evento.' },
+      { name: 'Hacker Iniciante', criteria_key: `${SEED_TAG}_beginner`, criteria_config: { type: 'first_challenge', minimum_challenges: 1 }, icon_url: null, rarity: 'comum', reward: 10, description: 'Resolveu seu primeiro desafio.' },
+      { name: 'Mestre Web', criteria_key: `${SEED_TAG}_web_master`, criteria_config: { type: 'complete_category', event_categories: ['Web Exploitation'] }, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de Web Exploitation.' },
+      { name: 'Criptógrafo', criteria_key: `${SEED_TAG}_cryptographer`, criteria_config: { type: 'complete_category', event_categories: ['Cryptography'] }, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de criptografia.' },
+      { name: 'Perito Forense', criteria_key: `${SEED_TAG}_forensics_expert`, criteria_config: { type: 'complete_category', event_categories: ['Forensics'] }, icon_url: null, rarity: 'cru', reward: 25, description: 'Resolveu todos os desafios de forense digital.' },
+      { name: 'Sem Dicas', criteria_key: `${SEED_TAG}_no_hints`, criteria_config: { type: 'complete_event_without_hints', scope: 'any_event' }, icon_url: null, rarity: 'epico', reward: 75, description: 'Completou um evento sem usar nenhuma dica.' },
+      { name: 'Lenda do CTF', criteria_key: `${SEED_TAG}_ctf_legend`, criteria_config: { type: 'total_points', minimum_points: 1000 }, icon_url: null, rarity: 'lendario', reward: 200, description: '1000+ pontos acumulados em competições.' },
+      { name: 'Maratonista', criteria_key: `${SEED_TAG}_marathon`, criteria_config: { type: 'events_participated', minimum_events: 5, participation: 'correct_submission' }, icon_url: null, rarity: 'comum', reward: 15, description: 'Participou de 5 ou mais eventos.' },
+      { name: 'Precisão Cirúrgica', criteria_key: `${SEED_TAG}_precision`, criteria_config: { type: 'perfect_event', minimum_challenges: 5, accuracy_percent: 100 }, icon_url: null, rarity: 'epico', reward: 60, description: '100% de precisão em um evento com 5+ desafios.' },
+      { name: 'Líder de Equipe', criteria_key: `${SEED_TAG}_team_leader`, criteria_config: { type: 'team_leader', minimum_members: 3, include_leader: true }, icon_url: null, rarity: 'comum', reward: 10, description: 'Criou uma equipe com 3+ membros.' },
     ];
     await supabase.from('badges').insert(badgesData);
     steps.push(`✅ ${badgesData.length} badges criados`);
@@ -686,23 +686,15 @@ export default function AdminPage() {
       return;
     }
 
-    const updatePayload: any = {
-      display_name: editForm.display_name,
-      role: editForm.role,
-      shells: editForm.shells,
-      xp_points: editForm.xp_points,
-      level: Math.max(1, Math.floor(editForm.xp_points / 100) + 1),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error, count } = await supabase.from('profiles').update(updatePayload, { count: 'exact' })
-      .eq('id', selectedUser.id);
+    const { error } = await supabase.rpc('update_managed_profile', {
+      p_target_user_id: selectedUser.id,
+      p_display_name: editForm.display_name,
+      p_role: editForm.role,
+      p_shells: editForm.shells,
+      p_xp_points: editForm.xp_points,
+    });
 
     if (error) { toast.error(error.message); return; }
-    if (count === 0) {
-      toast.error('Falha ao atualizar: permissão negada ou usuário não encontrado.');
-      return;
-    }
     toast.success('Usuário atualizado!');
     setEditModalOpen(false);
     await loadUsers();

@@ -432,19 +432,30 @@ Indexes criados para: `profiles(role)`, `events(visibility, created_by, class_id
 
 ## Segurança
 
-- **Row Level Security (RLS)** em todas as tabelas
-- **CSP Headers** configurados no `next.config.js`:
-  - `default-src 'self'`
-  - `script-src 'self' 'unsafe-eval' 'unsafe-inline'`
-  - `connect-src 'self' https://*.supabase.co wss://*.supabase.co`
-  - `img-src 'self' data: https:`
-  - `font-src 'self' data: https://fonts.gstatic.com`
-- **Headers de segurança**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`
-- **Sanitização XSS**: DOMPurify para HTML, sanitização manual para texto, validação de URLs
-- **Validação de senha**: 8+ chars, maiúscula, minúscula, número, caractere especial
-- **JWT validado server-side** no middleware via `getUser()` (não apenas `getSession()`)
-- **Timeout de sessão**: 1 hora de inatividade
-- **PKCE flow** para autenticação no browser
+- **Row Level Security (RLS)** habilitado em todas as tabelas da aplicação.
+- **Proteção contra escalação de privilégios**:
+  - usuários autenticados não possuem `UPDATE` em `profiles.role`, `email`, `shells`, `xp_points`, `level` ou `total_active_seconds`;
+  - alterações administrativas usam `update_managed_profile`, que valida os papéis do solicitante e do usuário alvo;
+  - `protect_profile_privileges` permanece como uma segunda barreira independente;
+  - o cadastro público sempre cria um `competitor`; metadados do cliente nunca concedem autorização.
+- **Segredos de desafios protegidos**: competidores não podem ler `challenges.flag` ou `submissions.answer`; organizadores autorizados usam `get_managed_challenges`.
+- **Operações sensíveis atômicas**: validação de respostas, pontuação e compra de dicas são calculadas no banco. `unlock_hint` registra o uso e desconta Shells na mesma transação.
+- **Distintivos automáticos**: submissões corretas concedem os critérios `first_challenge` e `first_blood`; a migração executa backfill para conquistas anteriores e credita a recompensa uma única vez.
+- **CSP com nonce por resposta**: scripts usam `script-src 'self' 'nonce-...' 'strict-dynamic'`, sem `unsafe-inline` ou `unsafe-eval`.
+- **Cabeçalhos de segurança**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` e `Cross-Origin-Opener-Policy`.
+- **Rota administrativa protegida no servidor**: o middleware verifica sessão e papel antes de renderizar `/dashboard/admin`; RLS e RPCs continuam protegendo os dados.
+- **Divulgação responsável** publicada em `/.well-known/security.txt`.
+- JWTs são validados no servidor com `getUser()`; o navegador usa PKCE e a sessão expira por inatividade.
+
+### Migrações de hardening
+
+- `20260808220000_security_hardening.sql`: cadastro seguro, validação de submissões no servidor e proteção inicial dos perfis.
+- `20260918180000_protect_answers_and_authorization.sql`: oculta flags/respostas e reforça autorização de papéis, turmas e grupos.
+- `20260918190000_fix_group_enrollment_rls_recursion.sql`: elimina recursão na política RLS de autoinscrição.
+- `20260919220000_lock_profile_privileged_columns.sql`: bloqueia `PATCH` direto de colunas privilegiadas e encaminha alterações administrativas para uma RPC autorizada.
+- `20260919230000_automatic_badge_awards.sql`: automatiza primeiro desafio/primeiro sangue e corrige concessões históricas.
+- `20260919240000_badge_criteria_config.sql`: normaliza as regras dos distintivos existentes e adiciona parâmetros estruturados em `criteria_config`.
+- `20260919250000_backfill_configured_badges.sql`: audita os critérios estruturados, concede conquistas históricas ausentes e credita cada recompensa uma única vez.
 
 ---
 
@@ -545,7 +556,7 @@ npm start
 - [ ] Testes automatizados (unit, integration, e2e)
 - [ ] Upload de imagens para Supabase Storage (eventos, turmas, perfil)
 - [ ] Notificações push / email
-- [ ] Sistema de conquistas automáticas (badge triggers)
+- [x] Sistema de conquistas automáticas para primeiro desafio e primeiro sangue, com backfill
 - [ ] Exportação de resultados (CSV/PDF)
 - [ ] Deploy (Vercel + Supabase Production)
 - [ ] PWA (Progressive Web App)
